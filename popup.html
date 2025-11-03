@@ -57,15 +57,40 @@
 </head>
 <body>
   <h3>Gemini Exporter</h3>
-  
+
   <div class="input-group">
-    <label for="startIndex">Start from conversation # (0 = beginning):</label>
+    <label>
+      <input type="checkbox" id="autoClickToggle">
+      Auto-click mode (15-25s random delays)
+    </label>
+    <small style="color: #666; display: block; margin-top: 5px;">
+      <strong>Recommended:</strong> Automatically clicks conversations with random delays to appear human-like.
+    </small>
+  </div>
+
+  <div class="input-group">
+    <label>
+      <input type="checkbox" id="autoExportToggle">
+      Manual auto-export mode
+    </label>
+    <small style="color: #666; display: block; margin-top: 5px;">
+      Enable this, then manually click through conversations. Each will auto-export.
+      Or use <strong>Ctrl+Shift+E</strong> to export current conversation.
+    </small>
+  </div>
+
+  <button id="exportCurrentBtn">Export Current Conversation</button>
+
+  <hr style="margin: 15px 0; border: none; border-top: 1px solid #ddd;">
+
+  <div class="input-group">
+    <label for="startIndex">Batch Mode - Start from conversation #:</label>
     <input type="number" id="startIndex" min="0" value="0">
   </div>
-  
-  <button id="exportBtn">Export All Conversations</button>
+
+  <button id="exportBtn">Export All Conversations (Batch)</button>
   <button id="cancelBtn">Cancel Export</button>
-  
+
   <div id="status">Ready to export</div>
   
   <script src="popup.js"></script>
