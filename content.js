@@ -112,6 +112,7 @@ async function extractAllConversations() {
   try {
     // Try multiple selectors for the sidebar (Google changes class names frequently)
     const sidebarSelectors = [
+      'infinite-scroller',  // The actual scrollable custom element
       '.gb_0d',  // Old selector
       'div[class*="conversation-list"]',
       'nav[aria-label*="onversation"]',
@@ -135,17 +136,40 @@ async function extractAllConversations() {
       }
     }
 
+    // Validate that the sidebar is actually scrollable
+    if (sidebar && sidebar.scrollHeight <= sidebar.clientHeight) {
+      console.log('Found sidebar but it is not scrollable, searching for scrollable child...');
+
+      // Look for scrollable descendants
+      const allDescendants = sidebar.querySelectorAll('*');
+      let scrollableElement = null;
+
+      for (const el of allDescendants) {
+        if (el.scrollHeight > el.clientHeight) {
+          // This element can scroll - check if it contains conversation items
+          if (el.querySelector('div.conversation-items-container')) {
+            scrollableElement = el;
+            console.log('Found scrollable child element:', el.tagName, el.className);
+            break;
+          }
+        }
+      }
+
+      if (scrollableElement) {
+        sidebar = scrollableElement;
+      }
+    }
+
     // If still not found, find the parent of conversation items
-    if (!sidebar) {
+    if (!sidebar || sidebar.scrollHeight <= sidebar.clientHeight) {
       const firstItem = document.querySelector('div.conversation-items-container');
       if (firstItem) {
-        // Find the scrollable parent
+        // Find the scrollable parent by checking scrollHeight
         let parent = firstItem.parentElement;
         while (parent && parent !== document.body) {
-          const style = window.getComputedStyle(parent);
-          if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+          if (parent.scrollHeight > parent.clientHeight) {
             sidebar = parent;
-            console.log('Found sidebar by traversing from conversation item');
+            console.log('Found sidebar by traversing from conversation item (scrollable)');
             break;
           }
           parent = parent.parentElement;
@@ -153,21 +177,42 @@ async function extractAllConversations() {
       }
     }
 
-    if (!sidebar) {
-      return { success: false, error: 'Sidebar not found. Please make sure you are on the Gemini chat page.' };
+    if (!sidebar || sidebar.scrollHeight <= sidebar.clientHeight) {
+      return { success: false, error: 'Scrollable sidebar not found. Please make sure you are on the Gemini chat page with conversations visible.' };
     }
 
-    console.log('Found sidebar, starting scroll...');
+    console.log('Found sidebar, starting scroll to load all conversations...');
+    console.log('This may take a while for large conversation histories. Please wait...');
+
+    // Debug: Log sidebar info
+    console.log('Sidebar element:', sidebar.tagName, sidebar.className);
+    console.log('Sidebar scrollHeight:', sidebar.scrollHeight);
+    console.log('Sidebar clientHeight:', sidebar.clientHeight);
+    console.log('Sidebar scrollTop (before):', sidebar.scrollTop);
 
     let previousCount = 0;
     let stallCount = 0;
-    const maxStalls = 10; // Increased from 5 to allow more time for loading
+    const maxStalls = 15; // Stop after 15 stalls (30 seconds of no new items with 2s intervals)
     let scrollAttempts = 0;
-    const maxScrollAttempts = 200; // Safety limit to prevent infinite loops
+    const maxScrollAttempts = 500; // Should be plenty for even very large histories
 
     while (stallCount < maxStalls && scrollAttempts < maxScrollAttempts) {
+      // Store old scroll value for debugging
+      const oldScrollTop = sidebar.scrollTop;
+
+      // Scroll to bottom to trigger lazy loading
       sidebar.scrollTop = sidebar.scrollHeight;
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 1500ms to 2000ms
+
+      // Debug on first attempt
+      if (scrollAttempts === 0) {
+        console.log('Sidebar scrollTop (after):', sidebar.scrollTop);
+        console.log('Did scroll position change?', oldScrollTop !== sidebar.scrollTop);
+        console.log('scrollHeight:', sidebar.scrollHeight, 'clientHeight:', sidebar.clientHeight);
+        console.log('Can scroll?', sidebar.scrollHeight > sidebar.clientHeight);
+      }
+
+      // Wait longer for batch loading (conversations load ~20 at a time)
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 seconds per scroll
 
       const items = document.querySelectorAll('div.conversation-items-container');
       const currentCount = items.length;
@@ -181,13 +226,13 @@ async function extractAllConversations() {
         const newCount = currentCount - previousCount;
         stallCount = 0;
         previousCount = currentCount;
-        console.log(`Loaded ${newCount} new conversations`);
+        console.log(`✓ Loaded ${newCount} new conversations (total: ${currentCount})`);
       }
 
       scrollAttempts++;
     }
 
-    console.log(`Scrolling complete after ${scrollAttempts} attempts. Total conversations found: ${previousCount}`);
+    console.log(`✓ Scrolling complete after ${scrollAttempts} attempts. Total conversations found: ${previousCount}`);
     
     const items = document.querySelectorAll('div.conversation-items-container');
     const conversations = [];

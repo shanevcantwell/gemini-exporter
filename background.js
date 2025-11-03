@@ -66,25 +66,18 @@ async function startExport(tabId, startIndex) {
         });
       } catch (e) {}
       
-      let clickResult;
+      // Navigate directly to the conversation URL instead of clicking by index
+      // This avoids issues with the sidebar resetting after each navigation
       try {
-        clickResult = await chrome.tabs.sendMessage(tabId, {
-          action: 'clickConversationByIndex',
-          index: conv.index  // Use original index for clicking
-        });
+        console.log(`Navigating to: ${conv.url}`);
+        await chrome.tabs.update(tabId, { url: conv.url });
+
+        // Wait for navigation and page load
+        await new Promise(resolve => setTimeout(resolve, 5000));
       } catch (error) {
-        console.error(`Failed to click conversation ${i}:`, error);
+        console.error(`Failed to navigate to conversation ${i}:`, error);
         continue;
       }
-      
-      if (!clickResult || !clickResult.success) {
-        console.error(`Click failed for conversation ${i}`);
-        continue;
-      }
-      
-      console.log(`Clicked conversation, URL: ${clickResult.url}`);
-      
-      await new Promise(resolve => setTimeout(resolve, 4000));
       
       let contentResult;
       try {
