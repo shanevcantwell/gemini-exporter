@@ -108,35 +108,86 @@ async function clickConversationByIndex(index) {
 
 async function extractAllConversations() {
   console.log('Starting conversation extraction...');
-  
+
   try {
-    const sidebar = document.querySelector('.gb_0d');
-    if (!sidebar) {
-      return { success: false, error: 'Sidebar not found' };
-    }
-    
-    console.log('Found sidebar, starting scroll...');
-    
-    let previousCount = 0;
-    let stallCount = 0;
-    const maxStalls = 5;
-    
-    while (stallCount < maxStalls) {
-      sidebar.scrollTop = sidebar.scrollHeight;
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const items = document.querySelectorAll('div.conversation-items-container');
-      const currentCount = items.length;
-      
-      console.log(`Found ${currentCount} conversations (was ${previousCount})`);
-      
-      if (currentCount === previousCount) {
-        stallCount++;
-      } else {
-        stallCount = 0;
-        previousCount = currentCount;
+    // Try multiple selectors for the sidebar (Google changes class names frequently)
+    const sidebarSelectors = [
+      '.gb_0d',  // Old selector
+      'div[class*="conversation-list"]',
+      'nav[aria-label*="onversation"]',
+      'aside',
+      '[role="navigation"]',
+      // Look for scrollable container that contains conversation items
+      'div:has(div.conversation-items-container)'
+    ];
+
+    let sidebar = null;
+    for (const selector of sidebarSelectors) {
+      try {
+        sidebar = document.querySelector(selector);
+        if (sidebar && sidebar.querySelector('div.conversation-items-container')) {
+          console.log(`Found sidebar using selector: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // :has() selector might not work in all browsers, continue
+        continue;
       }
     }
+
+    // If still not found, find the parent of conversation items
+    if (!sidebar) {
+      const firstItem = document.querySelector('div.conversation-items-container');
+      if (firstItem) {
+        // Find the scrollable parent
+        let parent = firstItem.parentElement;
+        while (parent && parent !== document.body) {
+          const style = window.getComputedStyle(parent);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+            sidebar = parent;
+            console.log('Found sidebar by traversing from conversation item');
+            break;
+          }
+          parent = parent.parentElement;
+        }
+      }
+    }
+
+    if (!sidebar) {
+      return { success: false, error: 'Sidebar not found. Please make sure you are on the Gemini chat page.' };
+    }
+
+    console.log('Found sidebar, starting scroll...');
+
+    let previousCount = 0;
+    let stallCount = 0;
+    const maxStalls = 10; // Increased from 5 to allow more time for loading
+    let scrollAttempts = 0;
+    const maxScrollAttempts = 200; // Safety limit to prevent infinite loops
+
+    while (stallCount < maxStalls && scrollAttempts < maxScrollAttempts) {
+      sidebar.scrollTop = sidebar.scrollHeight;
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 1500ms to 2000ms
+
+      const items = document.querySelectorAll('div.conversation-items-container');
+      const currentCount = items.length;
+
+      console.log(`Scroll attempt ${scrollAttempts + 1}: Found ${currentCount} conversations (was ${previousCount})`);
+
+      if (currentCount === previousCount) {
+        stallCount++;
+        console.log(`No new conversations loaded (stall ${stallCount}/${maxStalls})`);
+      } else {
+        const newCount = currentCount - previousCount;
+        stallCount = 0;
+        previousCount = currentCount;
+        console.log(`Loaded ${newCount} new conversations`);
+      }
+
+      scrollAttempts++;
+    }
+
+    console.log(`Scrolling complete after ${scrollAttempts} attempts. Total conversations found: ${previousCount}`);
     
     const items = document.querySelectorAll('div.conversation-items-container');
     const conversations = [];
@@ -172,6 +223,58 @@ async function extractAllConversations() {
   }
 }
 
+async function expandThinkingBlocks() {
+  // Find all thinking block expand buttons using reliable selectors
+  let expandedCount = 0;
+  let buttons = [];
+
+  // Try to find buttons with the most reliable selector first
+  buttons = document.querySelectorAll('button[data-test-id="thoughts-header-button"]');
+
+  // Fallback: find buttons inside model-thoughts containers
+  if (buttons.length === 0) {
+    const thoughtContainers = document.querySelectorAll('[data-test-id="model-thoughts"]');
+    console.log(`Found ${thoughtContainers.length} model-thoughts containers`);
+    buttons = [];
+    thoughtContainers.forEach(container => {
+      const button = container.querySelector('button');
+      if (button) buttons.push(button);
+    });
+  }
+
+  // Another fallback: look for buttons with "Show thinking" or "Hide thinking" text
+  if (buttons.length === 0) {
+    const allButtons = document.querySelectorAll('button');
+    buttons = Array.from(allButtons).filter(btn => {
+      const text = btn.textContent.toLowerCase();
+      return text.includes('show thinking') || text.includes('hide thinking');
+    });
+  }
+
+  console.log(`Found ${buttons.length} thinking block buttons to process`);
+
+  for (const button of buttons) {
+    try {
+      const buttonText = button.textContent.toLowerCase();
+
+      // Only click if it says "Show thinking" (not "Hide thinking")
+      if (buttonText.includes('show thinking')) {
+        console.log('Expanding thinking block');
+        button.click();
+        expandedCount++;
+        await new Promise(resolve => setTimeout(resolve, 300)); // Brief delay between expansions
+      } else {
+        console.log('Thinking block already expanded (shows "Hide thinking")');
+      }
+    } catch (e) {
+      console.error('Error expanding button:', e);
+    }
+  }
+
+  console.log(`Expanded ${expandedCount} thinking blocks`);
+  return expandedCount;
+}
+
 async function extractCurrentConversation() {
   console.log('Extracting current conversation...');
   
@@ -199,6 +302,12 @@ async function extractCurrentConversation() {
     if (!main) {
       return { success: false, error: 'Main element not found' };
     }
+    
+    // Expand all thinking blocks before extraction
+    console.log('Expanding thinking blocks...');
+    const expandedCount = await expandThinkingBlocks();
+    console.log(`Expanded ${expandedCount} thinking blocks, waiting for content to load...`);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for expansions to complete
     
     const clone = main.cloneNode(true);
     
