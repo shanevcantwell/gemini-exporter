@@ -1,0 +1,11 @@
+# Exported data - too large for git
+gemini_export
+gemini_export/
+*.csv
+
+# Node modules if added
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
