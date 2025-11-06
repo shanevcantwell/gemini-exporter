@@ -15,6 +15,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'downloadConversation') {
     downloadSingleConversation(message.data, message.sequenceIndex).then(sendResponse);
     return true;
+  } else if (message.action === 'downloadConversationJSON') {
+    downloadConversationJSON(message.conversation, message.sequenceIndex).then(sendResponse);
+    return true;
   }
 });
 
@@ -106,6 +109,47 @@ async function downloadSingleConversation(data, sequenceIndex = null) {
     }
 
     console.log(`✓ Exported #${index + 1}: ${filename} (${data.images ? data.images.length : 0} images)`);
+
+    return { success: true, count: index + 1 };
+  } catch (error) {
+    console.error('Download error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function downloadConversationJSON(conversation, sequenceIndex = null) {
+  try {
+    // Skip if already exported
+    if (exportedConversations.has(conversation.conversation_id)) {
+      console.log('Already exported:', conversation.title);
+      return { success: true, skipped: true };
+    }
+
+    // Use sequenceIndex if provided (auto-click mode), otherwise use exportedCount (manual mode)
+    const index = sequenceIndex !== null ? sequenceIndex : exportedCount;
+    const paddedIndex = String(index).padStart(4, '0');
+    const cleanTitle = sanitizeFilename(conversation.title || `conversation_${index}`);
+    const folderName = `${paddedIndex}_${cleanTitle}_${conversation.conversation_id}`;
+
+    // Create pretty-printed JSON
+    const jsonContent = JSON.stringify(conversation, null, 2);
+    const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonContent);
+    const filename = `${folderName}.json`;
+
+    await chrome.downloads.download({
+      url: dataUrl,
+      filename: `gemini_export/${folderName}/${filename}`,
+      saveAs: false
+    });
+
+    exportedConversations.add(conversation.conversation_id);
+
+    // Only increment exportedCount in manual mode (when sequenceIndex is null)
+    if (sequenceIndex === null) {
+      exportedCount++;
+    }
+
+    console.log(`✓ Exported #${index + 1}: ${filename} (${conversation.exchange_count} exchanges, ${conversation.message_count} messages)`);
 
     return { success: true, count: index + 1 };
   } catch (error) {

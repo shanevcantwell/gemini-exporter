@@ -41,18 +41,23 @@ document.addEventListener('keydown', (e) => {
 
 async function exportCurrentConversation(sequenceIndex = null) {
   try {
-    const result = await extractCurrentConversation();
+    // Use new structured extraction
+    const result = await extractStructuredConversation();
+
     if (result.success) {
-      lastExportedConversationId = result.id;
+      const conversation = result.conversation;
+      lastExportedConversationId = conversation.conversation_id;
 
       // Send to background script for download
       chrome.runtime.sendMessage({
-        action: 'downloadConversation',
-        data: result,
+        action: 'downloadConversationJSON',
+        conversation: conversation,
         sequenceIndex: sequenceIndex  // Pass index for auto-click mode
       });
 
-      console.log('✓ Exported:', result.title, sequenceIndex !== null ? `(#${sequenceIndex})` : '');
+      console.log('✓ Exported:', conversation.title,
+                  `(${conversation.exchange_count} exchanges, ${conversation.message_count} messages)`,
+                  sequenceIndex !== null ? `#${sequenceIndex}` : '');
     } else {
       console.error('✗ Export failed:', result.error);
 
@@ -670,26 +675,390 @@ async function expandThinkingBlocks() {
 
   console.log(`Found ${buttons.length} thinking block buttons to process`);
 
-  for (const button of buttons) {
+  for (let i = 0; i < buttons.length; i++) {
+    const button = buttons[i];
+
     try {
       const buttonText = button.textContent.toLowerCase();
 
       // Only click if it says "Show thinking" (not "Hide thinking")
       if (buttonText.includes('show thinking')) {
-        console.log('Expanding thinking block');
+        // Scroll into view to ensure rendering
+        button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        console.log(`Expanding thinking block ${i + 1}/${buttons.length}`);
         button.click();
-        expandedCount++;
-        await new Promise(resolve => setTimeout(resolve, 300)); // Brief delay between expansions
+
+        // Verify expansion (retry up to 10 times)
+        let verified = false;
+        for (let retry = 0; retry < 10; retry++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Check if content appeared - use actual Gemini selectors
+          const container = button.closest('.conversation-container') || button.parentElement.parentElement;
+          const thoughtsContent = container?.querySelector('[class*="model-thoughts"], [class*="thinking"], [class*="thought"]');
+
+          if (thoughtsContent && thoughtsContent.textContent.trim().length > 50) {
+            verified = true;
+            console.log(`✓ Verified thinking block ${i + 1}`);
+            expandedCount++;
+            break;
+          }
+        }
+
+        if (!verified) {
+          console.warn(`⚠ Failed to verify thinking block ${i + 1}`);
+        }
       } else {
-        console.log('Thinking block already expanded (shows "Hide thinking")');
+        console.log(`Thinking block ${i + 1} already expanded`);
+        expandedCount++;
       }
     } catch (e) {
-      console.error('Error expanding button:', e);
+      console.error(`Error expanding button ${i + 1}:`, e);
     }
   }
 
-  console.log(`Expanded ${expandedCount} thinking blocks`);
+  // Final wait for any lazy-loaded content
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  console.log(`Expanded ${expandedCount}/${buttons.length} thinking blocks`);
   return expandedCount;
+}
+
+// Helper: Extract thinking stages from container
+function extractThinkingStages(container) {
+  const stages = [];
+
+  // Get all paragraphs and divs that might contain stage content
+  const elements = container.querySelectorAll('p, div');
+  let currentStage = null;
+
+  for (const el of elements) {
+    // Skip empty elements
+    if (!el.textContent.trim()) continue;
+
+    // Check if element is a stage header (contains bold/strong text as the entire content)
+    const boldEl = el.querySelector('strong, b');
+    const trimmedText = el.textContent.trim();
+
+    if (boldEl && trimmedText === boldEl.textContent.trim() && trimmedText.length > 0) {
+      // This is a stage header - save previous stage if exists
+      if (currentStage && currentStage.text.trim()) {
+        stages.push(currentStage);
+      }
+
+      // Start new stage
+      currentStage = {
+        stage_name: boldEl.textContent.trim(),
+        text: ''
+      };
+    } else if (currentStage && trimmedText.length > 0) {
+      // This is stage content - add to current stage
+      currentStage.text += (currentStage.text ? '\n\n' : '') + trimmedText;
+    }
+  }
+
+  // Don't forget the last stage
+  if (currentStage && currentStage.text.trim()) {
+    stages.push(currentStage);
+  }
+
+  return stages.length > 0 ? stages : null;
+}
+
+// Helper: Extract response text excluding thinking block
+function extractResponseText(geminiEl, excludeThinking = true) {
+  const clone = geminiEl.cloneNode(true);
+
+  // Remove thinking container from clone if requested
+  if (excludeThinking) {
+    const thinkingContainers = clone.querySelectorAll('[data-test-id="model-thoughts"]');
+    thinkingContainers.forEach(tc => tc.remove());
+
+    // Also remove thinking buttons
+    const thinkingButtons = clone.querySelectorAll('button[data-test-id="thoughts-header-button"]');
+    thinkingButtons.forEach(tb => tb.remove());
+  }
+
+  // Remove other UI elements
+  const uiElements = clone.querySelectorAll('button, [role="button"]');
+  uiElements.forEach(el => {
+    // Keep code copy buttons and similar, but remove others
+    if (!el.closest('pre, code')) {
+      el.remove();
+    }
+  });
+
+  return clone.textContent.trim();
+}
+
+// Helper: Extract clean text content from an element
+function extractTextContent(element) {
+  if (!element) return '';
+
+  const clone = element.cloneNode(true);
+
+  // Remove buttons and other UI elements
+  const uiElements = clone.querySelectorAll('button:not(pre button), [role="button"]:not(pre [role="button"])');
+  uiElements.forEach(el => el.remove());
+
+  return clone.textContent.trim();
+}
+
+// Main structured extraction function (DOM → JSON)
+async function extractStructuredConversation() {
+  console.log('=== Starting Structured Conversation Extraction ===');
+
+  try {
+    // Step 1: Wait for page to load
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    let chatLoaded = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const main = document.querySelector('main');
+      if (main && main.textContent.length > 500) {
+        console.log(`Chat loaded after ${attempt + 1} attempts, ${main.textContent.length} chars`);
+        chatLoaded = true;
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (!chatLoaded) {
+      return { success: false, error: 'Chat failed to load after 10 attempts' };
+    }
+
+    // Step 2: Extract conversation ID and title
+    const conversationId = window.location.pathname.match(/\/app\/([^/?]+)/)?.[1] || 'unknown';
+    console.log('Conversation ID:', conversationId);
+
+    // Use existing title extraction logic
+    const titleResult = await extractTitle();
+    const title = titleResult || 'Untitled';
+
+    // Step 3: Expand all thinking blocks with verification
+    console.log('Expanding thinking blocks...');
+    const expandedCount = await expandThinkingBlocks();
+    console.log(`Expanded ${expandedCount} thinking blocks`);
+
+    // Step 4: Extract exchanges from DOM using conversation-container as parent
+    const main = document.querySelector('main');
+    if (!main) {
+      return { success: false, error: 'Main element not found' };
+    }
+
+    // Find all conversation containers (each wraps one complete turn)
+    const conversationContainers = Array.from(main.querySelectorAll('.conversation-container'));
+    console.log(`Found ${conversationContainers.length} conversation containers`);
+
+    const exchanges = [];
+    let messageIndex = 0;
+
+    // Process each conversation container as one exchange
+    for (let containerIndex = 0; containerIndex < conversationContainers.length; containerIndex++) {
+      const container = conversationContainers[containerIndex];
+      const exchangeMessages = [];
+
+      // Extract container ID for timestamp merging with Google Takeout data
+      const containerId = container.id || null;
+
+      console.log(`\n=== Processing container ${containerIndex} (ID: ${containerId}) ===`);
+
+      // Extract ALL user-query-container elements (including nested duplicates)
+      const userContainers = Array.from(container.querySelectorAll('.user-query-container'));
+      console.log(`  Found ${userContainers.length} user containers (raw, including duplicates)`);
+
+      for (let userIdx = 0; userIdx < userContainers.length; userIdx++) {
+        const userContainer = userContainers[userIdx];
+        const userText = extractTextContent(userContainer);
+
+        if (userText && userText.length > 0) {
+          exchangeMessages.push({
+            message_index: messageIndex++,
+            speaker: 'User',
+            message_type: 'user_input',
+            timestamp: null,
+            text: userText,
+            thinking_stages: null,
+            duplicate_index: userIdx,  // Track which duplicate this is
+            dom_tag: userContainer.tagName.toLowerCase(),
+            dom_classes: Array.from(userContainer.classList).join(' ')
+          });
+          console.log(`    User message ${userIdx}: ${userText.substring(0, 50)}...`);
+        }
+      }
+
+      // Extract thinking block if present
+      const thinkingButton = container.querySelector('button[data-test-id="thoughts-header-button"]');
+      const thinkingContent = container.querySelector('[class*="model-thoughts"], [class*="thinking"]');
+
+      if (thinkingButton && thinkingContent) {
+        const stages = extractThinkingStages(thinkingContent);
+
+        if (stages && stages.length > 0) {
+          exchangeMessages.push({
+            message_index: messageIndex++,
+            speaker: 'Gemini',
+            message_type: 'thinking',
+            timestamp: null,
+            text: null,
+            thinking_stages: stages
+          });
+          console.log(`    Thinking: ${stages.length} stages found`);
+        } else {
+          console.log(`    Thinking button present but no stages extracted`);
+        }
+      } else {
+        console.log(`    No thinking content found`);
+      }
+
+      // Extract ALL markdown-main-panel elements (raw, no deduplication)
+      const markdownPanels = Array.from(container.querySelectorAll('.markdown-main-panel'));
+      console.log(`  Found ${markdownPanels.length} markdown panels (raw, including duplicates)`);
+
+      for (let panelIdx = 0; panelIdx < markdownPanels.length; panelIdx++) {
+        const panel = markdownPanels[panelIdx];
+        const clone = panel.cloneNode(true);
+
+        // Remove thinking content from clone to avoid duplication
+        const thinkingContainers = clone.querySelectorAll('[class*="model-thoughts"], [class*="thinking"], [class*="thought"]');
+        thinkingContainers.forEach(tc => tc.remove());
+
+        // Also remove thinking buttons
+        const thinkingButtons = clone.querySelectorAll('button[data-test-id="thoughts-header-button"]');
+        thinkingButtons.forEach(tb => tb.remove());
+
+        // Remove other UI elements
+        const uiElements = clone.querySelectorAll('button:not(pre button), [role="button"]:not(pre [role="button"])');
+        uiElements.forEach(el => el.remove());
+
+        const responseText = clone.textContent.trim();
+
+        if (responseText && responseText.length > 0) {
+          exchangeMessages.push({
+            message_index: messageIndex++,
+            speaker: 'Gemini',
+            message_type: 'assistant_response',
+            timestamp: null,
+            text: responseText,
+            thinking_stages: null,
+            duplicate_index: panelIdx  // Track which duplicate this is
+          });
+          console.log(`    Response ${panelIdx}: ${responseText.substring(0, 50)}...`);
+        } else {
+          console.log(`    Response ${panelIdx}: EMPTY (likely streaming duplicate)`);
+        }
+      }
+
+      // Create exchange with all raw messages from this container
+      if (exchangeMessages.length > 0) {
+        exchanges.push({
+          exchange_index: containerIndex,
+          container_id: containerId,  // DOM element ID for timestamp merging
+          messages: exchangeMessages,
+          raw_user_container_count: userContainers.length,
+          raw_markdown_panel_count: markdownPanels.length
+        });
+      }
+    }
+
+    console.log(`\n=== Extraction Summary ===`);
+    console.log(`Extracted ${exchanges.length} exchanges with ${messageIndex} total messages`);
+
+    // Step 5: Build complete conversation object
+    const conversation = {
+      conversation_id: conversationId,
+      title: title,
+      url: window.location.href,
+      export_timestamp: new Date().toISOString(),
+      export_version: '2.0-raw',
+      export_type: 'raw',
+      export_note: 'Raw DOM extraction with all duplicates preserved. Post-processing required to deduplicate and clean data.',
+      exchange_count: exchanges.length,
+      message_count: messageIndex,
+      exchanges: exchanges
+    };
+
+    console.log('=== Structured Extraction Complete ===');
+
+    return {
+      success: true,
+      conversation: conversation
+    };
+
+  } catch (error) {
+    console.error('Error in extractStructuredConversation:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Helper: Extract title (re-use existing logic)
+async function extractTitle() {
+  const conversationId = window.location.pathname.match(/\/app\/([^/?]+)/)?.[1] || 'unknown';
+
+  // Helper function to check if title is valid
+  const isValidTitle = (title) => {
+    if (!title || title.trim().length === 0) return false;
+    const normalized = title.toLowerCase().trim();
+    const invalidTitles = ['untitled', 'google', 'recent', 'gemini', 'new conversation'];
+    return !invalidTitles.includes(normalized) && title.trim().length > 0;
+  };
+
+  // Helper function to try extracting title from various sources
+  const tryExtractTitle = () => {
+    // Try 1: Find conversation title in the main content area
+    const conversationHeader = document.querySelector('main h1, main h2, main [role="heading"]');
+    if (conversationHeader && conversationHeader.textContent.trim().length > 0) {
+      const candidate = conversationHeader.textContent.trim();
+      if (isValidTitle(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Try 2: Find the conversation in the sidebar by matching the ID
+    const sidebarItems = document.querySelectorAll('div.conversation-items-container');
+    for (const item of sidebarItems) {
+      const button = item.querySelector('div[role="button"]');
+      if (button) {
+        const jslog = button.getAttribute('jslog');
+        if (jslog && jslog.includes(conversationId)) {
+          item.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+          const titleEl = item.querySelector('div.conversation-title');
+          if (titleEl) {
+            const candidate = titleEl.textContent.trim();
+            if (isValidTitle(candidate)) {
+              return candidate;
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    // Try 3: document.title as last resort (but still validate it)
+    const docTitle = document.title.replace(' - Gemini', '').replace('Gemini', '').trim();
+    if (isValidTitle(docTitle)) {
+      return docTitle;
+    }
+
+    return null;
+  };
+
+  // Retry loop: try up to 10 times with 1-second delays
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = tryExtractTitle();
+    if (result) {
+      console.log(`✓ Got valid title on attempt ${attempt + 1}: "${result}"`);
+      return result;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  console.warn('⚠ Failed to extract valid title after 10 attempts, using "Untitled"');
+  return 'Untitled';
 }
 
 async function extractCurrentConversation() {

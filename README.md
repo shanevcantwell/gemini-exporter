@@ -48,45 +48,138 @@ Click "Export Current Conversation" button or press Ctrl+Shift+E
 
 ## Export Format
 
+**As of v2.0-raw**, conversations are exported as **raw JSON files with ALL DOM data including duplicates**:
+
 ```
 gemini_export/
 ├── 0000_Conversation_Title_abc123def456/
-│   ├── 0000_Conversation_Title_abc123def456.md
-│   └── images/
-│       ├── image_001.png
-│       ├── image_002.png
-│       └── image_003.png
+│   └── 0000_Conversation_Title_abc123def456.json
 ├── 0001_Another_Conversation_xyz789/
-│   ├── 0001_Another_Conversation_xyz789.md
-│   └── images/
-│       └── image_001.png
+│   └── 0001_Another_Conversation_xyz789.json
 ```
+
+### JSON Structure (Raw Export)
+
+Each conversation is exported with:
+- **Exchange-based organization**: One exchange per `.conversation-container` DOM element
+- **Container IDs**: Each exchange includes `container_id` (DOM element ID) for timestamp merging with Google Takeout data
+- **Message types**: `user_input`, `thinking`, `assistant_response`
+- **Thinking stages**: Preserved as structured objects with stage names and content
+- **RAW duplicates preserved**: User messages appear 3x (nested DOM structure), responses may appear multiple times (streaming artifacts)
+- **Duplicate tracking**: Each message includes `duplicate_index` to identify which copy it is
+- **DOM metadata**: User messages include `dom_tag` and `dom_classes` for post-processing
+- **Export metadata**: Marked as `"export_type": "raw"` indicating post-processing needed
+
+Example structure:
+```json
+{
+  "conversation_id": "abc123def456",
+  "title": "Conversation Title",
+  "export_version": "2.0-raw",
+  "export_type": "raw",
+  "export_note": "Raw DOM extraction with all duplicates preserved. Post-processing required to deduplicate and clean data.",
+  "exchange_count": 1,
+  "message_count": 5,
+  "exchanges": [
+    {
+      "exchange_index": 0,
+      "container_id": "c61fbdc59e290cd9",
+      "raw_user_container_count": 3,
+      "raw_markdown_panel_count": 1,
+      "messages": [
+        {
+          "message_index": 0,
+          "speaker": "User",
+          "message_type": "user_input",
+          "text": "User question...",
+          "duplicate_index": 0,
+          "dom_tag": "div",
+          "dom_classes": "user-query-container"
+        },
+        {
+          "message_index": 1,
+          "speaker": "User",
+          "message_type": "user_input",
+          "text": "User question...",
+          "duplicate_index": 1,
+          "dom_tag": "user-query-content",
+          "dom_classes": "user-query-container"
+        },
+        {
+          "message_index": 2,
+          "speaker": "User",
+          "message_type": "user_input",
+          "text": "User question...",
+          "duplicate_index": 2,
+          "dom_tag": "span",
+          "dom_classes": "user-query-container"
+        },
+        {
+          "message_index": 3,
+          "speaker": "Gemini",
+          "message_type": "thinking",
+          "thinking_stages": [
+            {
+              "stage_name": "Understanding the Request",
+              "text": "Internal reasoning..."
+            }
+          ]
+        },
+        {
+          "message_index": 4,
+          "speaker": "Gemini",
+          "message_type": "assistant_response",
+          "text": "Response text...",
+          "duplicate_index": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+See [SCHEMA.md](SCHEMA.md) for complete field reference and post-processing guide.
 
 ## Known Limitations
 
-- **Sidebar content** appears in exported markdown (minor formatting issue, can be post-processed)
+- **Raw data requires post-processing** - Exports include all DOM duplicates and need deduplication
 - **No timestamps** in export (timestamps can be added via Google Takeout data cross-indexing)
 - **Desktop must stay unlocked** during overnight runs (Chrome limitation)
 - **DOM dependency** - Google may change Gemini's HTML structure at any time
+- **Images not included** in v2.0 JSON exports (focus is on text and thinking stages)
+- **Larger file sizes** - Raw exports with duplicates are ~3x larger than deduplicated exports
 
 ## Contributing
 
-This extension is fully functional but could use improvements:
+This extension exports raw DOM data successfully. The next tool needed is a **post-processor** to:
 
-- **Better sidebar filtering** to remove "Recent" conversation list from exports
+- **Deduplicate user messages** - Keep the most complete version of the 3 nested user containers
+- **Deduplicate responses** - Filter out empty streaming artifacts, keep final rendered response
+- **Clean message structure** - Remove duplicate_index, dom_tag, dom_classes after deduplication
+- **Merge timestamps from Google Takeout** - Match exchanges by `container_id`, `exchange_index`, or text similarity
+- **Validate data integrity** - Ensure each exchange has exactly 1 user, 0-1 thinking, 1 response
+
+Other potential improvements:
+
 - **Timestamp extraction** from browser storage or API responses
-- **Turn-by-turn parsing** to add `## User` / `## Assistant` headers
-- **Robustness improvements** for DOM changes
 - **Better error reporting** in the UI
+- **Robustness improvements** for DOM changes
 
 Feel free to fork, improve, and submit PRs. Or open an issue if you need help or find bugs after a Gemini update.
 
 ## Technical Notes
 
+- **Export format**: v2.0-raw uses structured JSON with raw DOM data (duplicates preserved)
+- **Parent container**: Uses `.conversation-container` as the atomic unit (each contains one complete turn)
+- **Container ID extraction**: Captures DOM `id` attribute from each container for timestamp merging with Google Takeout
 - **Title extraction**: Tries main header → sidebar → document.title with 10 retries
-- **Image handling**: Converts to data URLs when possible, downloads via background script
-- **Thinking blocks**: Expands via `button[data-test-id="thoughts-header-button"]`
-- **Conversation detection**: Uses `div.conversation-items-container` and `jslog` attributes
+- **Thinking block expansion**: Scrolls into view, clicks, verifies content loaded (up to 10 retry attempts per block)
+- **Exchange detection**: One exchange per `.conversation-container` element found in main
+- **User message extraction**: Extracts ALL `.user-query-container` elements (typically 3 nested duplicates per turn)
+- **Response extraction**: Extracts ALL `.markdown-main-panel` elements (may include streaming artifacts)
+- **Duplicate tracking**: Each message includes `duplicate_index` and DOM metadata for post-processing
+- **Thinking stage parsing**: Extracts bold headers as stage names, following text as stage content
+- **Conversation detection**: Uses `div.conversation-items-container` and `jslog` attributes for sidebar matching
 
 ## License
 
