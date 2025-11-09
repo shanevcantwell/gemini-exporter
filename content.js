@@ -324,17 +324,55 @@ async function clickNextConversation() {
 function extractConversationId(item) {
   try {
     const button = item.querySelector('div[role="button"]');
-    if (!button) return null;
-    
-    const jslog = button.getAttribute('jslog');
-    if (!jslog) return null;
-    
-    const match = jslog.match(/"(c_[a-f0-9]{16})"/);
-    
-    if (match && match[1]) {
-      return match[1];
+    if (!button) {
+      console.warn('extractConversationId: No button found in item');
+      return null;
     }
-    
+
+    // Method 1: Try jslog attribute with relaxed regex
+    const jslog = button.getAttribute('jslog');
+    if (jslog) {
+      // More permissive pattern: accept any hex ID after c_, not just lowercase 16 chars
+      const match = jslog.match(/"(c_[a-fA-F0-9]{12,})"/);
+
+      if (match && match[1]) {
+        return match[1];
+      }
+
+      // Alternative pattern without quotes
+      const match2 = jslog.match(/c_[a-fA-F0-9]{12,}/);
+      if (match2) {
+        return match2[0];
+      }
+
+      console.warn('extractConversationId: jslog exists but no ID matched:', jslog.substring(0, 100));
+    }
+
+    // Method 2: Try extracting from href attribute
+    const link = item.querySelector('a[href*="/app/"]');
+    if (link) {
+      const href = link.getAttribute('href');
+      const hrefMatch = href.match(/\/app\/([a-fA-F0-9]+)/);
+      if (hrefMatch && hrefMatch[1]) {
+        console.log('extractConversationId: Extracted from href:', hrefMatch[1]);
+        return hrefMatch[1];
+      }
+    }
+
+    // Method 3: Try data attributes
+    const dataId = item.getAttribute('data-conversation-id') ||
+                   item.getAttribute('data-id') ||
+                   button.getAttribute('data-conversation-id');
+    if (dataId) {
+      console.log('extractConversationId: Extracted from data attribute:', dataId);
+      return dataId;
+    }
+
+    // Log failure with context
+    const titleEl = item.querySelector('div.conversation-title');
+    const title = titleEl ? titleEl.textContent.trim().substring(0, 50) : 'Unknown';
+    console.warn(`extractConversationId: Failed to extract ID for: "${title}"`);
+
     return null;
   } catch (error) {
     console.error('Error extracting conversation ID:', error);
@@ -515,19 +553,20 @@ async function extractAllConversations() {
     }
 
     console.log(`✓ Scrolling complete after ${scrollAttempts} attempts. Total conversations found: ${previousCount}`);
-    
+
     const items = document.querySelectorAll('div.conversation-items-container');
     const conversations = [];
-    
+    const skipped = [];
+
     console.log(`Processing ${items.length} conversation items`);
-    
+
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
       const titleEl = item.querySelector('div.conversation-title');
       const title = titleEl ? titleEl.textContent.trim() : `Conversation ${index + 1}`;
-      
+
       const id = extractConversationId(item);
-      
+
       if (id) {
         conversations.push({
           id: id,
@@ -535,10 +574,16 @@ async function extractAllConversations() {
           url: `https://gemini.google.com/app/${id}`,
           index: index
         });
+      } else {
+        skipped.push({ index, title: title.substring(0, 60) });
       }
     }
-    
-    console.log(`Successfully extracted ${conversations.length} conversations`);
+
+    console.log(`Successfully extracted ${conversations.length} conversations, ${skipped.length} skipped`);
+    if (skipped.length > 0) {
+      console.warn('⚠️ Failed to extract IDs for the following conversations:');
+      skipped.forEach(s => console.warn(`  [${s.index}] ${s.title}`));
+    }
     
     return { 
       success: true, 
@@ -615,6 +660,7 @@ async function scrollAndGetConversations(scrollCount = 5) {
     // Get currently loaded conversations
     const items = document.querySelectorAll('div.conversation-items-container');
     const conversations = [];
+    const skipped = [];
 
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
@@ -629,10 +675,16 @@ async function scrollAndGetConversations(scrollCount = 5) {
           url: `https://gemini.google.com/app/${id}`,
           index: index
         });
+      } else {
+        skipped.push({ index, title: title.substring(0, 60) });
       }
     }
 
-    console.log(`After ${scrollCount} scrolls: ${conversations.length} total conversations loaded`);
+    console.log(`After ${scrollCount} scrolls: ${items.length} items found, ${conversations.length} IDs extracted, ${skipped.length} skipped`);
+    if (skipped.length > 0) {
+      console.warn('⚠️ Skipped conversations (no ID extracted):');
+      skipped.forEach(s => console.warn(`  [${s.index}] ${s.title}`));
+    }
 
     return {
       success: true,
@@ -646,49 +698,79 @@ async function scrollAndGetConversations(scrollCount = 5) {
 }
 
 async function expandThinkingBlocks() {
-  // Find all thinking block expand buttons using reliable selectors
+  // Keep expanding thinking blocks until no more unexpanded buttons are found
   let expandedCount = 0;
-  let buttons = [];
+  let totalProcessed = 0;
+  let passNumber = 1;
+  const maxPasses = 10;  // Safety limit
+  const expandedContainers = new Set();  // Track which containers we've expanded
 
-  // Try to find buttons with the most reliable selector first
-  buttons = document.querySelectorAll('button[data-test-id="thoughts-header-button"]');
+  while (passNumber <= maxPasses) {
+    // Find buttons that need expanding (say "Show thinking")
+    let buttonsToExpand = [];
 
-  // Fallback: find buttons inside model-thoughts containers
-  if (buttons.length === 0) {
-    const thoughtContainers = document.querySelectorAll('[data-test-id="model-thoughts"]');
-    console.log(`Found ${thoughtContainers.length} model-thoughts containers`);
-    buttons = [];
-    thoughtContainers.forEach(container => {
-      const button = container.querySelector('button');
-      if (button) buttons.push(button);
-    });
-  }
+    // Try to find buttons with the most reliable selector first
+    const allButtons = Array.from(document.querySelectorAll('button[data-test-id="thoughts-header-button"]'));
 
-  // Another fallback: look for buttons with "Show thinking" or "Hide thinking" text
-  if (buttons.length === 0) {
-    const allButtons = document.querySelectorAll('button');
-    buttons = Array.from(allButtons).filter(btn => {
+    // Fallback: find buttons inside model-thoughts containers
+    if (allButtons.length === 0) {
+      const thoughtContainers = document.querySelectorAll('[data-test-id="model-thoughts"]');
+      thoughtContainers.forEach(container => {
+        const button = container.querySelector('button');
+        if (button) allButtons.push(button);
+      });
+    }
+
+    // Another fallback: look for buttons with "Show thinking" or "Hide thinking" text
+    if (allButtons.length === 0) {
+      const allButtonElements = document.querySelectorAll('button');
+      allButtons.push(...Array.from(allButtonElements).filter(btn => {
+        const text = btn.textContent.toLowerCase();
+        return text.includes('show thinking') || text.includes('hide thinking');
+      }));
+    }
+
+    // Filter to only unexpanded buttons that we haven't processed yet
+    buttonsToExpand = allButtons.filter(btn => {
       const text = btn.textContent.toLowerCase();
-      return text.includes('show thinking') || text.includes('hide thinking');
+      if (!text.includes('show thinking')) return false;
+
+      // Check if we've already processed this container
+      const container = btn.closest('.conversation-container');
+      const containerId = container?.id || container?.getAttribute('data-id');
+      if (containerId && expandedContainers.has(containerId)) {
+        return false;  // Skip already processed
+      }
+      return true;
     });
-  }
 
-  console.log(`Found ${buttons.length} thinking block buttons to process`);
+    console.log(`Pass ${passNumber}: Found ${allButtons.length} total buttons, ${buttonsToExpand.length} new unexpanded`);
 
-  for (let i = 0; i < buttons.length; i++) {
-    const button = buttons[i];
+    // End condition: No more unexpanded buttons found
+    if (buttonsToExpand.length === 0) {
+      console.log(`✓ Expansion complete after ${passNumber - 1} passes. Expanded ${expandedCount} thinking blocks.`);
+      break;
+    }
 
-    try {
-      const buttonText = button.textContent.toLowerCase();
+    // Expand all buttons found in this pass
+    for (let i = 0; i < buttonsToExpand.length; i++) {
+      const button = buttonsToExpand[i];
+      totalProcessed++;
 
-      // Only click if it says "Show thinking" (not "Hide thinking")
-      if (buttonText.includes('show thinking')) {
+      try {
+        // Get container ID to track
+        const container = button.closest('.conversation-container');
+        const containerId = container?.id || container?.getAttribute('data-id') || `temp-${totalProcessed}`;
+
         // Scroll into view to ensure rendering
         button.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        console.log(`Expanding thinking block ${i + 1}/${buttons.length}`);
+        console.log(`  Expanding thinking block ${totalProcessed} (pass ${passNumber}, ${i + 1}/${buttonsToExpand.length})`);
         button.click();
+
+        // Mark this container as processed immediately
+        expandedContainers.add(containerId);
 
         // Verify expansion (retry up to 10 times)
         let verified = false;
@@ -696,32 +778,29 @@ async function expandThinkingBlocks() {
           await new Promise(resolve => setTimeout(resolve, 500));
 
           // Check if content appeared - use actual Gemini selectors
-          const container = button.closest('.conversation-container') || button.parentElement.parentElement;
           const thoughtsContent = container?.querySelector('[class*="model-thoughts"], [class*="thinking"], [class*="thought"]');
 
           if (thoughtsContent && thoughtsContent.textContent.trim().length > 50) {
             verified = true;
-            console.log(`✓ Verified thinking block ${i + 1}`);
+            console.log(`  ✓ Verified thinking block ${totalProcessed}`);
             expandedCount++;
             break;
           }
         }
 
         if (!verified) {
-          console.warn(`⚠ Failed to verify thinking block ${i + 1}`);
+          console.warn(`  ⚠ Failed to verify thinking block ${totalProcessed}`);
         }
-      } else {
-        console.log(`Thinking block ${i + 1} already expanded`);
-        expandedCount++;
+      } catch (e) {
+        console.error(`  Error expanding button ${totalProcessed}:`, e);
       }
-    } catch (e) {
-      console.error(`Error expanding button ${i + 1}:`, e);
     }
+
+    // Wait before next pass to let any new content render
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    passNumber++;
   }
 
-  // Final wait for any lazy-loaded content
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  console.log(`Expanded ${expandedCount}/${buttons.length} thinking blocks`);
   return expandedCount;
 }
 
@@ -836,13 +915,56 @@ async function extractStructuredConversation() {
     const titleResult = await extractTitle();
     const title = titleResult || 'Untitled';
 
-    // Step 3: Expand all thinking blocks with verification
+    // Step 3: Scroll through entire conversation to force lazy-loaded exchanges to render
+    // IMPORTANT: Gemini conversations open at the BOTTOM and lazy-load UP as you scroll
+    console.log('Scrolling through conversation to load all exchanges...');
+    const main = document.querySelector('main');
+    if (main) {
+      const initialContainers = main.querySelectorAll('.conversation-container').length;
+      console.log(`Initial containers in DOM: ${initialContainers}`);
+      console.log(`Starting scroll position: ${main.scrollTop} (conversation opens at bottom)`);
+
+      // First, scroll UP to the very top to load all older exchanges
+      console.log('Scrolling UP to load older exchanges...');
+      const scrollUpSteps = 10;
+      for (let i = 0; i < scrollUpSteps; i++) {
+        main.scrollTop = 0;  // Keep scrolling to top
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const containers = main.querySelectorAll('.conversation-container').length;
+        console.log(`  Scroll up step ${i + 1}: ${containers} containers loaded`);
+      }
+
+      // Wait for rendering to stabilize at top
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const afterScrollUpContainers = main.querySelectorAll('.conversation-container').length;
+      console.log(`After scrolling to top: ${afterScrollUpContainers} containers (+${afterScrollUpContainers - initialContainers})`);
+
+      // Now scroll DOWN to bottom to ensure everything is rendered
+      console.log('Scrolling DOWN to ensure all exchanges rendered...');
+      const scrollDownSteps = 10;
+      for (let i = 0; i < scrollDownSteps; i++) {
+        main.scrollTop = main.scrollHeight;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Wait for rendering to stabilize
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const finalContainers = main.querySelectorAll('.conversation-container').length;
+      console.log(`After full scroll cycle: ${finalContainers} total containers`);
+
+      // Return to top for thinking block expansion
+      main.scrollTop = 0;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Step 4: Expand all thinking blocks with verification
     console.log('Expanding thinking blocks...');
     const expandedCount = await expandThinkingBlocks();
     console.log(`Expanded ${expandedCount} thinking blocks`);
 
-    // Step 4: Extract exchanges from DOM using conversation-container as parent
-    const main = document.querySelector('main');
+    // Step 5: Extract exchanges from DOM using conversation-container as parent
     if (!main) {
       return { success: false, error: 'Main element not found' };
     }

@@ -144,6 +144,7 @@ See [SCHEMA.md](SCHEMA.md) for complete field reference and post-processing guid
 
 - **Raw data requires post-processing** - Exports include all DOM duplicates and need deduplication
 - **No timestamps** in export (timestamps can be added via Google Takeout data cross-indexing)
+- **Window must stay visible and maximized** - Chrome/Windows deprioritizes background tabs, causing scrolling/loading failures. Keep the Gemini tab visible and maximized during exports.
 - **Desktop must stay unlocked** during overnight runs (Chrome limitation)
 - **DOM dependency** - Google may change Gemini's HTML structure at any time
 - **Images not included** in v2.0 JSON exports (focus is on text and thinking stages)

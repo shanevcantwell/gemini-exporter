@@ -11,3 +11,9 @@ node_modules/
 Thumbs.db
 docs/ADR/*
 .gitignore
+data/*
+.claude/*
+.vscode/*
+gemini-exporter/*
+content.js
+README.md
