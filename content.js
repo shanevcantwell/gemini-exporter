@@ -5,6 +5,7 @@ let lastExportedConversationId = null;
 let autoClickEnabled = false;
 let autoClickInterval = null;
 let currentClickIndex = 0;
+let isManualExportInProgress = false;
 
 // Watch for URL changes to auto-export conversations
 let lastUrl = window.location.href;
@@ -31,11 +32,24 @@ setInterval(() => {
 }, 1000);
 
 // Keyboard shortcut: Ctrl+Shift+E (or Cmd+Shift+E on Mac)
+let isExportingViaKeyboard = false;
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
     e.preventDefault();
+
+    // Debounce: ignore if already exporting
+    if (isExportingViaKeyboard) {
+      console.log('Export already in progress, ignoring keyboard shortcut');
+      return;
+    }
+
     console.log('Keyboard shortcut triggered, exporting current conversation...');
-    exportCurrentConversation();
+    isExportingViaKeyboard = true;
+
+    exportCurrentConversation()
+      .finally(() => {
+        isExportingViaKeyboard = false;
+      });
   }
 });
 
@@ -148,11 +162,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('Auto-export mode:', autoExportEnabled ? 'ENABLED' : 'DISABLED');
       sendResponse({ success: true, enabled: autoExportEnabled });
     } else if (message.action === 'exportCurrent') {
+      // Debounce: prevent multiple simultaneous manual exports
+      if (isManualExportInProgress) {
+        console.log('Manual export already in progress, ignoring button click');
+        sendResponse({ success: false, error: 'Export already in progress' });
+        return true;
+      }
+
+      isManualExportInProgress = true;
       exportCurrentConversation()
         .then(() => sendResponse({ success: true }))
         .catch(error => {
           console.error('Error exporting:', error);
           sendResponse({ success: false, error: error.message });
+        })
+        .finally(() => {
+          isManualExportInProgress = false;
         });
       return true;
     } else if (message.action === 'scrollAndGetConversations') {
@@ -179,11 +204,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Auto-click functions
-function startAutoClick(startIndex = 0) {
+async function startAutoClick(startIndex = 0) {
   console.log(`Starting auto-click from index ${startIndex}`);
   currentClickIndex = startIndex;
   autoClickEnabled = true;
   autoExportEnabled = true; // Enable auto-export when auto-clicking
+
+  // Click the FIRST conversation immediately (no delay)
+  await clickNextConversation();
+
+  // THEN schedule subsequent clicks with delays
   scheduleNextClick();
 }
 
@@ -915,54 +945,57 @@ async function extractStructuredConversation() {
     const titleResult = await extractTitle();
     const title = titleResult || 'Untitled';
 
-    // Step 3: Scroll through entire conversation to force lazy-loaded exchanges to render
+    // Step 3: Scroll to load all lazy-loaded exchanges
     // IMPORTANT: Gemini conversations open at the BOTTOM and lazy-load UP as you scroll
-    console.log('Scrolling through conversation to load all exchanges...');
+    console.log('Loading all exchanges via scroll...');
     const main = document.querySelector('main');
     if (main) {
       const initialContainers = main.querySelectorAll('.conversation-container').length;
-      console.log(`Initial containers in DOM: ${initialContainers}`);
-      console.log(`Starting scroll position: ${main.scrollTop} (conversation opens at bottom)`);
+      console.log(`Initial: ${initialContainers} containers`);
 
-      // First, scroll UP to the very top to load all older exchanges
-      console.log('Scrolling UP to load older exchanges...');
-      const scrollUpSteps = 10;
-      for (let i = 0; i < scrollUpSteps; i++) {
-        main.scrollTop = 0;  // Keep scrolling to top
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const containers = main.querySelectorAll('.conversation-container').length;
-        console.log(`  Scroll up step ${i + 1}: ${containers} containers loaded`);
+      // Scroll UP to load older exchanges (lazy-loading triggers as we scroll up)
+      let previousCount = initialContainers;
+      let stableCount = 0;
+      const maxScrollAttempts = 15;
+
+      for (let i = 0; i < maxScrollAttempts; i++) {
+        main.scrollTop = 0;  // Scroll to top
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        const currentCount = main.querySelectorAll('.conversation-container').length;
+        console.log(`  Scroll ${i + 1}: ${currentCount} containers`);
+
+        // If count hasn't changed for 2 iterations, we've loaded everything
+        if (currentCount === previousCount) {
+          stableCount++;
+          if (stableCount >= 2) {
+            console.log(`✓ All exchanges loaded (stable at ${currentCount})`);
+            break;
+          }
+        } else {
+          stableCount = 0;
+        }
+        previousCount = currentCount;
       }
-
-      // Wait for rendering to stabilize at top
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const afterScrollUpContainers = main.querySelectorAll('.conversation-container').length;
-      console.log(`After scrolling to top: ${afterScrollUpContainers} containers (+${afterScrollUpContainers - initialContainers})`);
-
-      // Now scroll DOWN to bottom to ensure everything is rendered
-      console.log('Scrolling DOWN to ensure all exchanges rendered...');
-      const scrollDownSteps = 10;
-      for (let i = 0; i < scrollDownSteps; i++) {
-        main.scrollTop = main.scrollHeight;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      // Wait for rendering to stabilize
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const finalContainers = main.querySelectorAll('.conversation-container').length;
-      console.log(`After full scroll cycle: ${finalContainers} total containers`);
-
-      // Return to top for thinking block expansion
-      main.scrollTop = 0;
-      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     // Step 4: Expand all thinking blocks with verification
     console.log('Expanding thinking blocks...');
     const expandedCount = await expandThinkingBlocks();
     console.log(`Expanded ${expandedCount} thinking blocks`);
+
+    // Step 4b: Scroll to bottom to ensure final exchanges are re-rendered (prevent virtual scroll de-rendering)
+    if (main) {
+      console.log('Scrolling to bottom to ensure final exchanges are rendered...');
+      main.scrollTop = main.scrollHeight;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Then scroll back up to ensure all content is in DOM
+      main.scrollTop = 0;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      main.scrollTop = main.scrollHeight;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
     // Step 5: Extract exchanges from DOM using conversation-container as parent
     if (!main) {
