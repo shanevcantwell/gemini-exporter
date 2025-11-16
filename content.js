@@ -808,14 +808,19 @@ async function expandAndExtractAllThinkingBlocks() {
       // Wait for DOM to settle before moving to next block
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Continue searching from current position
+      // After processing, scroll down to trigger loading next buttons into DOM
+      currentScrollPosition += scrollIncrement;
+      main.scrollTop = currentScrollPosition;
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Continue searching from new position
       continue;
     }
 
-    // No more buttons found at current scroll position, scroll down slightly
-    currentScrollPosition += scrollIncrement;
+    // No button found in viewport range - scroll down more to trigger virtualization
+    currentScrollPosition += scrollIncrement * 2; // Scroll more when no button found
     main.scrollTop = currentScrollPosition;
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Safety: if we've scrolled way past content and found nothing for a while, break
     if (currentScrollPosition > totalHeight + viewportHeight && passCount > (totalHeight / scrollIncrement) * 1.5) {
