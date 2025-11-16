@@ -20,10 +20,15 @@ setInterval(() => {
       console.log('New conversation detected, auto-exporting:', conversationId);
 
       // Wait for content to load, then export (increased to 5s for better title loading)
-      setTimeout(() => {
+      setTimeout(async () => {
         // Pass sequence index if in auto-click mode
         const sequenceIndex = autoClickEnabled ? (currentClickIndex - 1) : null;
-        exportCurrentConversation(sequenceIndex);
+        await exportCurrentConversation(sequenceIndex);
+
+        // If in auto-click mode, schedule next click AFTER export completes
+        if (autoClickEnabled) {
+          scheduleNextClick();
+        }
       }, 5000);
     }
   } else {
@@ -211,10 +216,8 @@ async function startAutoClick(startIndex = 0) {
   autoExportEnabled = true; // Enable auto-export when auto-clicking
 
   // Click the FIRST conversation immediately (no delay)
+  // Note: scheduleNextClick() will be called automatically after export completes
   await clickNextConversation();
-
-  // THEN schedule subsequent clicks with delays
-  scheduleNextClick();
 }
 
 function stopAutoClick() {
