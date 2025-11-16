@@ -1,191 +1,328 @@
-# Gemini Conversation Exporter
+# Forensic Conversation Exporter - Core Files (Scaffolded)
 
-A Chrome extension to export Google Gemini conversations to markdown files with images.
+This directory contains the 5 core files that bootstrap the v3.0 forensic exporter implementation.
 
-## Status
+## Files Created
 
-**✅ Fully tested and working** - Successfully exported 663+ conversations with proper titles, images, and metadata.
+### 1. `src/strategies/ExpansionStrategy.js` (224 lines)
+**Status:** ✅ **COMPLETE** - Ready to use
 
-**⚠️ UI brittleness warning**: This extension relies on Gemini's DOM structure, which Google may change without notice. If exports stop working after a Gemini update, the selectors in `content.js` may need updating.
+**What it provides:**
+- `ExpansionStrategy` base class (interface)
+- `ButtonClickStrategy` - Clicks "Show thinking" buttons (complete implementation)
+- `AlwaysVisibleStrategy` - For platforms where thinking is always visible
+- `NoThinkingStrategy` - Fallback for platforms without thinking
+- `ExpansionError` - Custom error type
 
-## Features
+**What works:**
+- All concrete strategies are fully implemented
+- Button clicking with scroll-into-view
+- Duplicate container tracking (prevents re-expansion)
+- Verification with configurable thresholds
+- Performance optimized (100ms delays vs 500ms)
 
-- **Auto-click mode**: Automatically iterates through conversations with human-like random delays (15-25s)
-- **Batch export**: Export all conversations or start from a specific index
-- **Manual export**: Export current conversation with Ctrl+Shift+E
-- **Smart title extraction**: Pulls actual conversation titles from sidebar with retry logic
-- **Image download**: Saves all conversation images to `./images/` subdirectories
-- **Thinking blocks**: Automatically expands and includes Claude's thinking blocks
-- **Error recovery**: Continues on errors rather than stopping entire batch
-- **Proper sequencing**: Files numbered correctly (0000, 0001, etc.)
+**Usage:**
+```javascript
+const strategy = new ButtonClickStrategy(
+  'button[data-test-id="thoughts-header-button"]',
+  'hide thinking'
+);
 
-## Installation
-
-1. Clone this repo
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable "Developer mode" (top right)
-4. Click "Load unpacked"
-5. Select the `gemini-exporter` directory
-6. Navigate to Google Gemini and open the extension popup
-
-## Usage
-
-### Auto-click Mode (Recommended for bulk export)
-1. Check "Auto-click mode" in the extension popup
-2. Set starting conversation number (default: 0)
-3. Click "Export All Conversations (Batch)"
-4. **Keep your desktop unlocked** - Chrome suspends tabs when locked
-5. Let it run (15-25s per conversation)
-
-### Manual Mode
-1. Enable "Manual auto-export mode"
-2. Manually click through conversations in Gemini
-3. Each conversation auto-exports as you view it
-4. Or press Ctrl+Shift+E to export current conversation
-
-### Single Conversation
-Click "Export Current Conversation" button or press Ctrl+Shift+E
-
-## Export Format
-
-**As of v2.0-raw**, conversations are exported as **raw JSON files with ALL DOM data including duplicates**:
-
-```
-gemini_export/
-├── 0000_Conversation_Title_abc123def456/
-│   └── 0000_Conversation_Title_abc123def456.json
-├── 0001_Another_Conversation_xyz789/
-│   └── 0001_Another_Conversation_xyz789.json
-```
-
-### JSON Structure (Raw Export)
-
-Each conversation is exported with:
-- **Exchange-based organization**: One exchange per `.conversation-container` DOM element
-- **Container IDs**: Each exchange includes `container_id` (DOM element ID) for timestamp merging with Google Takeout data
-- **Message types**: `user_input`, `thinking`, `assistant_response`
-- **Thinking stages**: Preserved as structured objects with stage names and content
-- **RAW duplicates preserved**: User messages appear 3x (nested DOM structure), responses may appear multiple times (streaming artifacts)
-- **Duplicate tracking**: Each message includes `duplicate_index` to identify which copy it is
-- **DOM metadata**: User messages include `dom_tag` and `dom_classes` for post-processing
-- **Export metadata**: Marked as `"export_type": "raw"` indicating post-processing needed
-
-Example structure:
-```json
-{
-  "conversation_id": "abc123def456",
-  "title": "Conversation Title",
-  "export_version": "2.0-raw",
-  "export_type": "raw",
-  "export_note": "Raw DOM extraction with all duplicates preserved. Post-processing required to deduplicate and clean data.",
-  "exchange_count": 1,
-  "message_count": 5,
-  "exchanges": [
-    {
-      "exchange_index": 0,
-      "container_id": "c61fbdc59e290cd9",
-      "raw_user_container_count": 3,
-      "raw_markdown_panel_count": 1,
-      "messages": [
-        {
-          "message_index": 0,
-          "speaker": "User",
-          "message_type": "user_input",
-          "text": "User question...",
-          "duplicate_index": 0,
-          "dom_tag": "div",
-          "dom_classes": "user-query-container"
-        },
-        {
-          "message_index": 1,
-          "speaker": "User",
-          "message_type": "user_input",
-          "text": "User question...",
-          "duplicate_index": 1,
-          "dom_tag": "user-query-content",
-          "dom_classes": "user-query-container"
-        },
-        {
-          "message_index": 2,
-          "speaker": "User",
-          "message_type": "user_input",
-          "text": "User question...",
-          "duplicate_index": 2,
-          "dom_tag": "span",
-          "dom_classes": "user-query-container"
-        },
-        {
-          "message_index": 3,
-          "speaker": "Gemini",
-          "message_type": "thinking",
-          "thinking_stages": [
-            {
-              "stage_name": "Understanding the Request",
-              "text": "Internal reasoning..."
-            }
-          ]
-        },
-        {
-          "message_index": 4,
-          "speaker": "Gemini",
-          "message_type": "assistant_response",
-          "text": "Response text...",
-          "duplicate_index": 0
-        }
-      ]
-    }
-  ]
+if (await strategy.isApplicable()) {
+  const count = await strategy.expand();
+  const verified = await strategy.verifyExpansion();
+  console.log(`Expanded ${count} thinking blocks, verified: ${verified}`);
 }
 ```
 
-See [SCHEMA.md](SCHEMA.md) for complete field reference and post-processing guide.
+### 2. `src/strategies/StrategySelector.js` (125 lines)
+**Status:** ✅ **COMPLETE** - Ready to use
 
-## Known Limitations
+**What it provides:**
+- `ExpansionStrategySelector` class
+- Strategy registration and fallback chain
+- `selectStrategy()` - Choose best strategy without executing
+- `executeExpansion()` - Execute with automatic fallback
 
-- **Raw data requires post-processing** - Exports include all DOM duplicates and need deduplication
-- **No timestamps** in export (timestamps can be added via Google Takeout data cross-indexing)
-- **Window must stay visible and maximized** - Chrome/Windows deprioritizes background tabs, causing scrolling/loading failures. Keep the Gemini tab visible and maximized during exports.
-- **Desktop must stay unlocked** during overnight runs (Chrome limitation)
-- **DOM dependency** - Google may change Gemini's HTML structure at any time
-- **Images not included** in v2.0 JSON exports (focus is on text and thinking stages)
-- **Larger file sizes** - Raw exports with duplicates are ~3x larger than deduplicated exports
+**What works:**
+- Registers strategies in priority order
+- Tries each strategy until one succeeds
+- Graceful degradation on failure
+- Detailed logging of attempts
 
-## Contributing
+**Usage:**
+```javascript
+const selector = new ExpansionStrategySelector();
 
-This extension exports raw DOM data successfully. The next tool needed is a **post-processor** to:
+// Register in priority order (first = highest priority)
+selector.registerStrategy(new ButtonClickStrategy('button[data-test-id="thoughts-header-button"]'));
+selector.registerStrategy(new AlwaysVisibleStrategy());
+selector.registerStrategy(new NoThinkingStrategy());
 
-- **Deduplicate user messages** - Keep the most complete version of the 3 nested user containers
-- **Deduplicate responses** - Filter out empty streaming artifacts, keep final rendered response
-- **Clean message structure** - Remove duplicate_index, dom_tag, dom_classes after deduplication
-- **Merge timestamps from Google Takeout** - Match exchanges by `container_id`, `exchange_index`, or text similarity
-- **Validate data integrity** - Ensure each exchange has exactly 1 user, 0-1 thinking, 1 response
+// Execute with fallback
+const result = await selector.executeExpansion();
+console.log(`Strategy ${result.strategy} expanded ${result.expandedCount} items`);
+```
 
-Other potential improvements:
+### 3. `src/extraction/rawHtmlExtractor.js` (145 lines)
+**Status:** ✅ **COMPLETE** - Ready to use
 
-- **Timestamp extraction** from browser storage or API responses
-- **Better error reporting** in the UI
-- **Robustness improvements** for DOM changes
+**What it provides:**
+- `extractRawHTML()` - Extract outerHTML from container
+- `verifyRawHTML()` - Sanity checks on extracted HTML
+- `getHTMLMetadata()` - Size, line count, root element info
 
-Feel free to fork, improve, and submit PRs. Or open an issue if you need help or find bugs after a Gemini update.
+**What works:**
+- Extracts from configurable selector (default: 'main')
+- Validates container exists and has content
+- Provides metadata for chain of custody
+- Optional verification checks
 
-## Technical Notes
+**Usage:**
+```javascript
+// Extract raw HTML
+const rawHTML = extractRawHTML({ containerSelector: 'main' });
 
-- **Export format**: v2.0-raw uses structured JSON with raw DOM data (duplicates preserved)
-- **Parent container**: Uses `.conversation-container` as the atomic unit (each contains one complete turn)
-- **Container ID extraction**: Captures DOM `id` attribute from each container for timestamp merging with Google Takeout
-- **Title extraction**: Tries main header → sidebar → document.title with 10 retries
-- **Thinking block expansion**: Scrolls into view, clicks, verifies content loaded (up to 10 retry attempts per block)
-- **Exchange detection**: One exchange per `.conversation-container` element found in main
-- **User message extraction**: Extracts ALL `.user-query-container` elements (typically 3 nested duplicates per turn)
-- **Response extraction**: Extracts ALL `.markdown-main-panel` elements (may include streaming artifacts)
-- **Duplicate tracking**: Each message includes `duplicate_index` and DOM metadata for post-processing
-- **Thinking stage parsing**: Extracts bold headers as stage names, following text as stage content
-- **Conversation detection**: Uses `div.conversation-items-container` and `jslog` attributes for sidebar matching
+// Verify extraction
+const verification = verifyRawHTML(rawHTML, {
+  minLength: 500,
+  requiredElements: ['data-message-id']
+});
 
-## License
+if (!verification.valid) {
+  console.error('Extraction failed:', verification.errors);
+}
 
-MIT - use freely, no warranties provided
+// Get metadata
+const metadata = getHTMLMetadata(rawHTML);
+console.log(`Extracted ${metadata.size_bytes} bytes`);
+```
 
-## Author
+### 4. `src/integrity/hashGenerator.js` (193 lines)
+**Status:** ✅ **COMPLETE** - Ready to use
 
-Built with Claude Code assistance for personal data archival needs.
+**What it provides:**
+- `generateHash()` - SHA-256 hash of string
+- `canonicalJSON()` - Deterministic JSON serialization
+- `generateObjectHash()` - Hash JavaScript object
+- `generateIntegrityProof()` - Complete integrity proof for evidence file
+- `verifyIntegrity()` - Re-hash and verify
+
+**What works:**
+- SHA-256 via Web Crypto API
+- Canonical JSON (sorted keys, no whitespace)
+- Complete integrity proof generation
+- Verification with detailed error messages
+
+**Critical feature:** Uses canonical JSON to prevent hash mismatches across languages/systems.
+
+**Usage:**
+```javascript
+// Generate integrity proof (ADR-009)
+const integrity = await generateIntegrityProof(rawHTML, structuredData);
+
+// Later, verify integrity
+const verification = await verifyIntegrity(
+  rawHTML,
+  structuredData,
+  storedIntegrity
+);
+
+if (!verification.valid) {
+  throw new Error('Evidence tampered!');
+}
+```
+
+### 5. `src/types/Evidence.js` (290 lines)
+**Status:** ✅ **COMPLETE** - Ready to use
+
+**What it provides:**
+- Complete TypeScript-style JSDoc type definitions
+- `Evidence` type (top-level evidence file)
+- `StructuredData`, `Exchange`, `Message`, `ThinkingStage` types
+- `IntegrityProof`, `ChainOfCustody` types
+- `createEvidence()` - Factory function
+- `validateEvidence()` - Structure validation
+
+**What works:**
+- Full type safety via JSDoc
+- IDE autocomplete for all evidence fields
+- Factory function for creating evidence objects
+- Validation function for checking structure
+
+**Usage:**
+```javascript
+/**
+ * @type {import('./types/Evidence').Evidence}
+ */
+const evidence = createEvidence({
+  rawHTML: rawHTML,
+  structuredData: structured,
+  integrity: integrityProof,
+  platform: { name: 'gemini', version: '2.5', adapter_version: '3.0.0' },
+  chainOfCustody: custody
+});
+
+// Validate before saving
+const validation = validateEvidence(evidence);
+if (!validation.valid) {
+  throw new Error(`Invalid evidence: ${validation.errors.join(', ')}`);
+}
+```
+
+## What's NOT Included (You Need to Implement)
+
+These scaffolded files handle the **foundational patterns** but don't include platform-specific logic:
+
+### Need to Implement Next (Week 1, Day 3-4):
+
+1. **`src/extraction/domParser.js`** (~100 lines)
+   - Orchestrates parsing of DOM → structured JSON
+   - Calls exchangeExtractor, messageExtractor, thinkingBlockParser
+   - This is where your existing v2.0 logic goes (refactored)
+
+2. **`src/extraction/exchangeExtractor.js`** (~120 lines)
+   - Finds exchange containers in DOM
+   - Extracts exchange boundaries
+   - Returns array of Exchange objects
+
+3. **`src/extraction/messageExtractor.js`** (~80 lines)
+   - Extracts messages from exchange container
+   - Identifies speaker (User vs Gemini)
+   - Determines message type (user_input, thinking, assistant_response)
+
+4. **`src/extraction/thinkingBlockParser.js`** (~80 lines)
+   - Parses thinking block content
+   - Extracts thinking stages (from bold headers)
+   - Returns array of ThinkingStage objects
+
+5. **`src/adapters/GeminiAdapter.js`** (~150 lines)
+   - Platform-specific adapter for Gemini
+   - Integrates expansion strategies
+   - Handles Gemini-specific DOM structure
+   - See ADR-005 for interface
+
+6. **`src/integrity/chainOfCustody.js`** (~60 lines)
+   - Generates chain of custody metadata
+   - Captures environment info (browser, timezone)
+   - Records extraction parameters
+   - See ADR-003 for structure
+
+7. **`src/background/exportController.js`** (~120 lines)
+   - Orchestrates entire extraction flow
+   - Calls: expansion → extract HTML → parse DOM → generate integrity → save
+   - Implements atomic extraction (ADR-007)
+
+## How These Files Integrate
+
+```javascript
+// Example integration (pseudocode):
+import { ExpansionStrategySelector, ButtonClickStrategy } from './strategies/';
+import { extractRawHTML } from './extraction/rawHtmlExtractor';
+import { generateIntegrityProof } from './integrity/hashGenerator';
+import { createEvidence } from './types/Evidence';
+
+async function exportConversation() {
+  // 1. Expand thinking blocks (ADR-008)
+  const selector = new ExpansionStrategySelector();
+  selector.registerStrategy(new ButtonClickStrategy('button[data-test-id="thoughts-header-button"]'));
+  const expansion = await selector.executeExpansion();
+
+  // 2. Extract raw HTML (ADR-001)
+  const rawHTML = extractRawHTML();
+
+  // 3. Parse DOM → JSON (ADR-009) - YOU NEED TO IMPLEMENT
+  const structured = await parseDOM(document.querySelector('main'));
+
+  // 4. Generate integrity proof (ADR-002)
+  const integrity = await generateIntegrityProof(rawHTML, structured);
+
+  // 5. Create evidence object (ADR-009)
+  const evidence = createEvidence({
+    rawHTML,
+    structuredData: structured,
+    integrity,
+    platform: { name: 'gemini', version: '2.5', adapter_version: '3.0.0' },
+    chainOfCustody: generateChainOfCustody(expansion) // YOU NEED TO IMPLEMENT
+  });
+
+  // 6. Save evidence file
+  await saveEvidenceFile(evidence);
+}
+```
+
+## Testing the Scaffolded Files
+
+All 5 files are **runnable in browser console** for testing:
+
+```javascript
+// In browser console on gemini.google.com:
+
+// Test expansion strategy
+const strategy = new ButtonClickStrategy('button[data-test-id="thoughts-header-button"]');
+const count = await strategy.expand();
+console.log(`Expanded ${count} thinking blocks`);
+
+// Test raw HTML extraction
+const rawHTML = extractRawHTML();
+console.log(`Extracted ${rawHTML.length} chars`);
+
+// Test hash generation
+const hash = await generateHash(rawHTML);
+console.log(`SHA-256: ${hash}`);
+```
+
+## Next Steps
+
+**Week 1, Day 3-4:** Implement DOM parsing
+1. Create `domParser.js` (orchestrator)
+2. Refactor your existing v2.0 extraction logic into:
+   - `exchangeExtractor.js`
+   - `messageExtractor.js`
+   - `thinkingBlockParser.js`
+
+**Week 1, Day 5:** Test hybrid extraction
+1. Integrate all pieces in `exportController.js`
+2. Test with 10 conversations
+3. Validate evidence structure
+
+**Week 2:** Platform adapters + forensics (see main implementation plan)
+
+## File Organization
+
+```
+src/
+├── strategies/
+│   ├── ExpansionStrategy.js          ✅ COMPLETE
+│   └── StrategySelector.js           ✅ COMPLETE
+│
+├── extraction/
+│   ├── rawHtmlExtractor.js           ✅ COMPLETE
+│   ├── domParser.js                  ⏳ TODO
+│   ├── exchangeExtractor.js          ⏳ TODO
+│   ├── messageExtractor.js           ⏳ TODO
+│   └── thinkingBlockParser.js        ⏳ TODO
+│
+├── integrity/
+│   ├── hashGenerator.js              ✅ COMPLETE
+│   └── chainOfCustody.js             ⏳ TODO
+│
+├── types/
+│   └── Evidence.js                   ✅ COMPLETE
+│
+├── adapters/                         ⏳ TODO (Week 2)
+├── background/                       ⏳ TODO (Week 2)
+└── core/                             ⏳ TODO (Week 2)
+```
+
+## Notes
+
+- All files use CommonJS exports for browser compatibility
+- No external dependencies (uses Web APIs only)
+- All functions have complete JSDoc documentation
+- Ready for TypeScript migration (just rename .js → .ts)
+- Files kept under 300 lines (broad & shallow structure)
+
+## Questions?
+
+If you need clarification on any scaffolded function or want me to implement any of the TODO files, let me know!
