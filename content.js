@@ -240,7 +240,8 @@ function scheduleNextClick() {
 
   autoClickInterval = setTimeout(async () => {
     await clickNextConversation();
-    scheduleNextClick(); // Schedule the next one
+    // NOTE: scheduleNextClick() is called after export completes (see line ~31)
+    // DO NOT call it here, as it creates duplicate timers
   }, delay);
 }
 
