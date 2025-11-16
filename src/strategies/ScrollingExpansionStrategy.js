@@ -81,6 +81,7 @@ class ScrollingExpansionStrategy {
       const allButtons = Array.from(document.querySelectorAll(this.buttonSelector));
       const nextButton = allButtons.find(btn => {
         const container = btn.closest('.conversation-container');
+        if (!container) return false; // Skip if button not in a container
         const containerId = this._getStableContainerId(container);
         if (processedContainers.has(containerId)) return false;
         if (!btn.textContent.toLowerCase().includes('show thinking')) return false;
