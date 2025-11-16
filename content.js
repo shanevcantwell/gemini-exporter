@@ -805,6 +805,9 @@ async function expandAndExtractAllThinkingBlocks() {
         processedContainers.add(container); // Mark as processed to avoid infinite loop
       }
 
+      // Wait for DOM to settle before moving to next block
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Continue searching from current position
       continue;
     }
