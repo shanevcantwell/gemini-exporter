@@ -255,45 +255,56 @@ async function clickNextConversation() {
 
     // Check if we need to scroll for more conversations
     if (currentClickIndex >= items.length) {
-      console.log('Reached end of loaded conversations, scrolling for more...');
+      console.log(`Reached end of loaded conversations (need index ${currentClickIndex}, have ${items.length}), scrolling...`);
 
-      const result = await scrollAndGetConversations(5);
+      // Keep scrolling until we have enough items or can't scroll anymore
+      let scrollAttempts = 0;
+      const maxScrollAttempts = 50; // Safety limit
 
-      if (!result.success) {
-        console.error('Failed to scroll:', result.error);
-        stopAutoClick();
-        return;
-      }
+      while (currentClickIndex >= items.length && scrollAttempts < maxScrollAttempts) {
+        scrollAttempts++;
+        console.log(`Scroll attempt ${scrollAttempts}: need ${currentClickIndex - items.length + 1} more items`);
 
-      if (!result.canScrollMore) {
-        console.log('No more conversations to load, auto-click complete!');
+        const result = await scrollAndGetConversations(5);
 
-        // Send completion message
-        try {
-          chrome.runtime.sendMessage({
-            type: 'autoClickComplete',
-            total: currentClickIndex
-          });
-        } catch (e) {
-          // Popup might be closed
+        if (!result.success) {
+          console.error('Failed to scroll:', result.error);
+          stopAutoClick();
+          return;
         }
 
-        stopAutoClick();
-        return;
+        if (!result.canScrollMore) {
+          console.log('No more conversations to load, auto-click complete!');
+
+          // Send completion message
+          try {
+            chrome.runtime.sendMessage({
+              type: 'autoClickComplete',
+              total: currentClickIndex
+            });
+          } catch (e) {
+            // Popup might be closed
+          }
+
+          stopAutoClick();
+          return;
+        }
+
+        // Wait for new conversations to load
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Re-query items after scrolling
+        items = document.querySelectorAll('div.conversation-items-container');
+        console.log(`  → After scroll ${scrollAttempts}: now have ${items.length} items loaded`);
       }
-
-      // Wait for new conversations to load
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Re-query items after scrolling
-      items = document.querySelectorAll('div.conversation-items-container');
-      console.log(`After scrolling, now have ${items.length} items loaded`);
 
       if (currentClickIndex >= items.length) {
-        console.log('Still not enough items after scrolling, stopping');
+        console.log(`Could not load enough items after ${scrollAttempts} scroll attempts, stopping`);
         stopAutoClick();
         return;
       }
+
+      console.log(`✓ Successfully loaded index ${currentClickIndex} after ${scrollAttempts} scroll attempts`);
     }
 
     // Click the conversation at current index
