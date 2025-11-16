@@ -1,6 +1,109 @@
-# Forensic Conversation Exporter - Core Files (Scaffolded)
+# Gemini Conversation Exporter
 
-This directory contains the 5 core files that bootstrap the v3.0 forensic exporter implementation.
+**Status: PRE-ALPHA TESTING** - Working but unoptimized
+
+Chrome extension that exports Google Gemini conversations to structured JSON with complete thinking block capture.
+
+## Current Status
+
+✅ **WORKING** - Achieved 100% thinking block capture (56/56 in test conversation)
+⚠️ **PRE-ALPHA** - Performance not optimized (est. 11 hours for 658 conversations)
+🔬 **TESTING** - Full batch export in progress to validate capture rate across all conversations
+
+## Key Features
+
+- **100% Thinking Block Capture**: Overcomes DOM virtualization to capture all thinking stages
+- **Stable Container IDs**: Survives DOM recreation during lazy-loading
+- **Incremental Scrolling**: Uses `scrollIntoView()` to trigger Gemini's lazy-loading per exchange
+- **Race Condition Prevention**: Waits for export completion before switching conversations
+- **Structured JSON Export**: Each conversation exported as standalone JSON file
+- **Auto-Click Batch Export**: Automatically exports all conversations in sequence
+
+## Installation
+
+1. Clone repository:
+   ```bash
+   git clone https://github.com/shanevcantwell/gemini-exporter.git
+   cd gemini-exporter
+   ```
+
+2. Load extension in Chrome:
+   - Open `chrome://extensions`
+   - Enable "Developer mode" (top right)
+   - Click "Load unpacked"
+   - Select the `gemini-exporter` directory
+
+3. Navigate to `https://gemini.google.com`
+
+## Usage
+
+### Single Conversation Export
+
+1. Open any Gemini conversation
+2. Press `Ctrl+Shift+E` (or `Cmd+Shift+E` on Mac)
+3. Check console for progress
+4. JSON file downloads automatically
+
+### Batch Export (All Conversations)
+
+1. Open Gemini conversation list page
+2. Open browser console (F12)
+3. Run:
+   ```javascript
+   startAutoClick(0)  // Start from first conversation
+   ```
+4. Extension will:
+   - Click each conversation in sequence
+   - Wait 5s for page load
+   - Export conversation (~60s per conversation)
+   - Move to next conversation
+   - Continue until all exported
+
+**Export location:** `./data/gemini_export/XXXX_Title_ConversationID/`
+
+## Performance
+
+**Current timing (per conversation):**
+- Page load: 5s
+- Thinking block expansion: ~30-50s (depends on exchange count)
+- Export + save: ~5s
+- **Total: ~60s per conversation**
+
+**Batch export estimate:**
+- 658 conversations × 60s = ~11 hours
+
+⚠️ **Note**: Performance optimization planned for v3.0 refactor
+
+## How It Works
+
+### DOM Virtualization Solution
+
+Gemini uses virtual scrolling that keeps only ~10 exchanges in DOM. The exporter overcomes this by:
+
+1. **Incremental Expansion**: Finds one thinking block button at a time
+2. **Scroll Into View**: Calls `scrollIntoView()` on each button, triggering Gemini to load that exchange
+3. **Immediate Extraction**: Extracts thinking stages before DOM virtualizes away
+4. **Stable IDs**: Uses first 100 chars of text as container ID (survives DOM recreation)
+5. **Map Storage**: Stores extracted thinking in Map keyed by stable ID
+6. **Continue Until End**: Scrolls through entire conversation, expanding/extracting each block
+
+### Key Technical Insights
+
+- **Direct scrollTop manipulation doesn't trigger lazy-loading**
+- **scrollIntoView() DOES trigger lazy-loading** (forces that section into viewport)
+- **DOM elements as Map keys fail with virtualization** (elements recreated, references break)
+- **String-based stable IDs survive virtualization** (content-based, not DOM-based)
+
+## Troubleshooting
+
+**Q: Only getting 10 exchanges instead of all?**
+A: Reload extension in `chrome://extensions` and refresh Gemini page
+
+**Q: Exports interrupting mid-scroll?**
+A: Fixed in latest version - auto-click now waits for export completion
+
+**Q: Thinking blocks showing as null?**
+A: Check console for expansion errors - may need to increase delays
 
 ## Files Created
 
