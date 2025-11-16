@@ -318,8 +318,10 @@ async function clickNextConversation() {
     // Extract conversation ID before clicking to assign sequence number
     const conversationId = extractConversationId(item);
     if (conversationId) {
-      conversationSequenceMap.set(conversationId, currentClickIndex);
-      console.log(`  → Assigned sequence ${currentClickIndex} to conversation ${conversationId}`);
+      // Normalize: strip "c_" prefix to match URL-extracted ID format
+      const normalizedId = conversationId.replace(/^c_/, '');
+      conversationSequenceMap.set(normalizedId, currentClickIndex);
+      console.log(`  → Assigned sequence ${currentClickIndex} to conversation ${normalizedId}`);
     } else {
       console.warn(`  ⚠ Could not extract conversation ID for index ${currentClickIndex}`);
     }
