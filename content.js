@@ -6,6 +6,7 @@ let autoClickEnabled = false;
 let autoClickInterval = null;
 let currentClickIndex = 0;
 let isManualExportInProgress = false;
+const conversationSequenceMap = new Map(); // Maps conversationId → sequenceIndex
 
 // Watch for URL changes to auto-export conversations
 let lastUrl = window.location.href;
@@ -21,8 +22,8 @@ setInterval(() => {
 
       // Wait for content to load, then export (increased to 5s for better title loading)
       setTimeout(async () => {
-        // Pass sequence index if in auto-click mode
-        const sequenceIndex = autoClickEnabled ? (currentClickIndex - 1) : null;
+        // Retrieve pre-assigned sequence index from map (assigned at click time)
+        const sequenceIndex = autoClickEnabled ? conversationSequenceMap.get(conversationId) : null;
         await exportCurrentConversation(sequenceIndex);
 
         // If in auto-click mode, schedule next click AFTER export completes
@@ -227,6 +228,7 @@ function stopAutoClick() {
     clearTimeout(autoClickInterval);
     autoClickInterval = null;
   }
+  conversationSequenceMap.clear(); // Clear sequence tracking on stop
 }
 
 function scheduleNextClick() {
@@ -311,6 +313,15 @@ async function clickNextConversation() {
       });
     } catch (e) {
       // Popup might be closed
+    }
+
+    // Extract conversation ID before clicking to assign sequence number
+    const conversationId = extractConversationId(item);
+    if (conversationId) {
+      conversationSequenceMap.set(conversationId, currentClickIndex);
+      console.log(`  → Assigned sequence ${currentClickIndex} to conversation ${conversationId}`);
+    } else {
+      console.warn(`  ⚠ Could not extract conversation ID for index ${currentClickIndex}`);
     }
 
     const result = await clickConversationByIndex(currentClickIndex);
