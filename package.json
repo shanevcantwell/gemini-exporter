@@ -1,0 +1,29 @@
+{
+  "name": "forensic-conversation-exporter",
+  "version": "3.0.0",
+  "description": "Forensic-grade conversation export tool for AI platforms (Gemini, Claude, ChatGPT)",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test runner configured yet\" && exit 1"
+  },
+  "keywords": [
+    "forensic",
+    "evidence",
+    "conversation",
+    "export",
+    "gemini",
+    "claude",
+    "chatgpt",
+    "chrome-extension"
+  ],
+  "author": "Shane Cantwell",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shanevcantwell/gemini-exporter"
+  }
+}
