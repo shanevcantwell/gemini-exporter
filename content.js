@@ -1086,19 +1086,20 @@ async function extractStructuredConversation() {
       // Scroll UP to load older exchanges (lazy-loading triggers as we scroll up)
       let previousCount = initialContainers;
       let stableCount = 0;
-      const maxScrollAttempts = 15;
+      const maxScrollAttempts = 30;  // Increased from 15 for long conversations
 
       for (let i = 0; i < maxScrollAttempts; i++) {
         main.scrollTop = 0;  // Scroll to top
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 2000));  // Increased from 800ms to 2s
 
         const currentCount = main.querySelectorAll('.conversation-container').length;
         console.log(`  Scroll ${i + 1}: ${currentCount} containers`);
 
-        // If count hasn't changed for 2 iterations, we've loaded everything
+        // If count hasn't changed for 5 iterations, we've loaded everything
+        // (Increased from 2 to handle long conversations with slow lazy-loading)
         if (currentCount === previousCount) {
           stableCount++;
-          if (stableCount >= 2) {
+          if (stableCount >= 5) {
             console.log(`✓ All exchanges loaded (stable at ${currentCount})`);
             break;
           }
