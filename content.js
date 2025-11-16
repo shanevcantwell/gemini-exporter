@@ -748,7 +748,6 @@ async function expandAndExtractAllThinkingBlocks() {
 
   console.log('=== Starting one-at-a-time expansion with scroll ===');
 
-  const totalHeight = main.scrollHeight;
   const viewportHeight = main.clientHeight;
   const scrollIncrement = 100; // Small increments to trigger virtualization
 
@@ -759,8 +758,11 @@ async function expandAndExtractAllThinkingBlocks() {
   let currentScrollPosition = 0;
   let passCount = 0;
 
-  while (currentScrollPosition <= totalHeight) {
+  while (true) {
     passCount++;
+
+    // Recalculate total height each iteration (grows as content loads)
+    const totalHeight = main.scrollHeight;
 
     // Find ONE unexpanded thinking block (anywhere in DOM, viewport check removed to handle virtualization)
     const allButtons = Array.from(document.querySelectorAll('button[data-test-id="thoughts-header-button"]'));

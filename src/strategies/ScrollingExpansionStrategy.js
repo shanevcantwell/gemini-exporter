@@ -64,7 +64,6 @@ class ScrollingExpansionStrategy {
 
     console.log('=== ScrollingExpansionStrategy: Starting one-at-a-time expansion ===');
 
-    const totalHeight = main.scrollHeight;
     const viewportHeight = main.clientHeight;
 
     // Scroll to top
@@ -74,8 +73,11 @@ class ScrollingExpansionStrategy {
     let currentScrollPosition = 0;
     let passCount = 0;
 
-    while (currentScrollPosition <= totalHeight) {
+    while (true) {
       passCount++;
+
+      // Recalculate total height each iteration (grows as content loads)
+      const totalHeight = main.scrollHeight;
 
       // Find ONE unexpanded thinking block (anywhere in DOM, viewport check removed to handle virtualization)
       const allButtons = Array.from(document.querySelectorAll(this.buttonSelector));
