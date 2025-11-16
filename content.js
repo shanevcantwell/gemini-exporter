@@ -727,6 +727,13 @@ async function scrollAndGetConversations(scrollCount = 5) {
   }
 }
 
+// Helper: Generate stable ID from container content (survives DOM virtualization)
+function getStableContainerId(container) {
+  // Use first 100 chars of text content as stable identifier
+  // This survives virtualization since text content is recreated identically
+  return container.textContent.substring(0, 100).replace(/\s+/g, ' ').trim();
+}
+
 // NEW: Expand and extract thinking blocks ONE AT A TIME while scrolling through entire conversation
 async function expandAndExtractAllThinkingBlocks() {
   const main = document.querySelector('main');
@@ -735,9 +742,9 @@ async function expandAndExtractAllThinkingBlocks() {
     return { thinkingBlocksMap: new Map(), totalExtracted: 0 };
   }
 
-  const thinkingBlocksMap = new Map();
+  const thinkingBlocksMap = new Map(); // Maps: stableId (string) -> thinking data
   let totalExtracted = 0;
-  const processedContainers = new Set();
+  const processedContainers = new Set(); // Stores: stableId (string)
 
   console.log('=== Starting one-at-a-time expansion with scroll ===');
 
@@ -759,7 +766,8 @@ async function expandAndExtractAllThinkingBlocks() {
     const allButtons = Array.from(document.querySelectorAll('button[data-test-id="thoughts-header-button"]'));
     const nextButton = allButtons.find(btn => {
       const container = btn.closest('.conversation-container');
-      if (processedContainers.has(container)) return false;
+      const containerId = getStableContainerId(container);
+      if (processedContainers.has(containerId)) return false;
       if (!btn.textContent.toLowerCase().includes('show thinking')) return false;
 
       // Don't check viewport - just find next unprocessed button
@@ -787,11 +795,13 @@ async function expandAndExtractAllThinkingBlocks() {
           expandedContent = null;
         }
 
+        const containerId = getStableContainerId(container);
+
         if (expandedContent) {
           // Extract IMMEDIATELY before scrolling away
           const stages = extractThinkingStages(expandedContent);
           if (stages && stages.length > 0) {
-            thinkingBlocksMap.set(container, { thinking_stages: stages });
+            thinkingBlocksMap.set(containerId, { thinking_stages: stages });
             totalExtracted++;
             console.log(`  ✓ Extracted ${stages.length} stages`);
           }
@@ -799,11 +809,12 @@ async function expandAndExtractAllThinkingBlocks() {
           console.warn(`  ⚠ Expansion failed`);
         }
 
-        processedContainers.add(container);
+        processedContainers.add(containerId);
 
       } catch (e) {
         console.error(`  Error:`, e);
-        processedContainers.add(container); // Mark as processed to avoid infinite loop
+        const containerId = getStableContainerId(container);
+        processedContainers.add(containerId); // Mark as processed to avoid infinite loop
       }
 
       // Wait for DOM to settle before moving to next block
@@ -1165,7 +1176,9 @@ async function extractStructuredConversation() {
       }
 
       // Use pre-extracted thinking blocks from map (already extracted during batch expansion)
-      const preExtractedThinking = thinkingBlocksMap.get(container);
+      // Use stable ID for lookup (survives DOM virtualization)
+      const containerId = getStableContainerId(container);
+      const preExtractedThinking = thinkingBlocksMap.get(containerId);
 
       if (preExtractedThinking && preExtractedThinking.thinking_stages) {
         exchangeMessages.push({
