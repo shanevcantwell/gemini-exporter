@@ -10,7 +10,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 docs/ADR/*
-.gitignore
 data/*
 .claude/*
 .vscode/*
@@ -21,3 +20,5 @@ README.md
 
 docs/*
 data/*
+IMPLEMENTATION_COMPLETE.md
+scaffolding-extracted/*
