@@ -1083,30 +1083,48 @@ async function extractStructuredConversation() {
       const initialContainers = main.querySelectorAll('.conversation-container').length;
       console.log(`Initial: ${initialContainers} containers`);
 
-      // Scroll UP to load older exchanges (lazy-loading triggers as we scroll up)
+      // Start at bottom, scroll UP gradually to trigger lazy-loading
+      main.scrollTop = main.scrollHeight;  // Ensure we're at bottom
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       let previousCount = initialContainers;
       let stableCount = 0;
-      const maxScrollAttempts = 30;  // Increased from 15 for long conversations
+      const scrollIncrement = 500;  // Scroll up 500px at a time
+      const maxScrollAttempts = 100;  // More attempts since we're scrolling incrementally
+      let currentScrollPosition = main.scrollHeight;
 
       for (let i = 0; i < maxScrollAttempts; i++) {
-        main.scrollTop = 0;  // Scroll to top
-        await new Promise(resolve => setTimeout(resolve, 2000));  // Increased from 800ms to 2s
+        // Scroll UP by decrementing scroll position
+        currentScrollPosition = Math.max(0, currentScrollPosition - scrollIncrement);
+        main.scrollTop = currentScrollPosition;
+
+        // Wait for content to load
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         const currentCount = main.querySelectorAll('.conversation-container').length;
-        console.log(`  Scroll ${i + 1}: ${currentCount} containers`);
 
-        // If count hasn't changed for 5 iterations, we've loaded everything
-        // (Increased from 2 to handle long conversations with slow lazy-loading)
+        // Only log when count changes or every 10 iterations
+        if (currentCount !== previousCount || i % 10 === 0) {
+          console.log(`  Scroll ${i + 1} (pos: ${currentScrollPosition}): ${currentCount} containers`);
+        }
+
+        // If count hasn't changed for 10 iterations, we've loaded everything
         if (currentCount === previousCount) {
           stableCount++;
-          if (stableCount >= 5) {
-            console.log(`✓ All exchanges loaded (stable at ${currentCount})`);
+          if (stableCount >= 10) {
+            console.log(`✓ All exchanges loaded (stable at ${currentCount} for ${stableCount} iterations)`);
             break;
           }
         } else {
           stableCount = 0;
+          previousCount = currentCount;
         }
-        previousCount = currentCount;
+
+        // If we've reached the top and count is stable, we're done
+        if (currentScrollPosition === 0 && stableCount >= 5) {
+          console.log(`✓ Reached top (${currentCount} containers loaded)`);
+          break;
+        }
       }
     }
 
