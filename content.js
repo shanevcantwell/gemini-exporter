@@ -984,7 +984,12 @@ async function extractStructuredConversation() {
     const expandedCount = await expandThinkingBlocks();
     console.log(`Expanded ${expandedCount} thinking blocks`);
 
-    // Step 4b: Scroll to bottom to ensure final exchanges are re-rendered (prevent virtual scroll de-rendering)
+    // Step 4b: Capture raw HTML IMMEDIATELY after expansion (before scrolling virtualizes DOM)
+    console.log('Capturing raw HTML for forensic evidence (before scroll virtualization)...');
+    const rawHTML = main ? main.outerHTML : '';
+    console.log(`  Raw HTML captured: ${rawHTML.length.toLocaleString()} characters`);
+
+    // Step 4c: Scroll to bottom to ensure final exchanges are re-rendered (prevent virtual scroll de-rendering)
     if (main) {
       console.log('Scrolling to bottom to ensure final exchanges are rendered...');
       main.scrollTop = main.scrollHeight;
@@ -997,14 +1002,10 @@ async function extractStructuredConversation() {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Step 4c: Capture raw HTML BEFORE extraction (forensic evidence)
+    // Step 4d: (rawHTML already captured above before scrolling)
     if (!main) {
       return { success: false, error: 'Main element not found' };
     }
-
-    console.log('Capturing raw HTML for forensic evidence...');
-    const rawHTML = main.outerHTML;
-    console.log(`  Raw HTML captured: ${rawHTML.length.toLocaleString()} characters`);
 
     // Step 5: Extract exchanges from DOM using conversation-container as parent
 
