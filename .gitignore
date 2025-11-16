@@ -17,3 +17,7 @@ data/*
 gemini-exporter/*
 content.js
 README.md
+
+
+docs/*
+data/*
