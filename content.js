@@ -755,15 +755,16 @@ async function expandAndExtractAllThinkingBlocks() {
   while (currentScrollPosition <= totalHeight) {
     passCount++;
 
-    // Find ONE unexpanded thinking block currently in or near viewport
+    // Find ONE unexpanded thinking block (anywhere in DOM, viewport check removed to handle virtualization)
     const allButtons = Array.from(document.querySelectorAll('button[data-test-id="thoughts-header-button"]'));
     const nextButton = allButtons.find(btn => {
       const container = btn.closest('.conversation-container');
       if (processedContainers.has(container)) return false;
       if (!btn.textContent.toLowerCase().includes('show thinking')) return false;
 
-      const rect = btn.getBoundingClientRect();
-      return rect.top >= -viewportHeight && rect.top < viewportHeight * 2; // Wide range
+      // Don't check viewport - just find next unprocessed button
+      // scrollIntoView() will handle bringing it into viewport
+      return true;
     });
 
     if (nextButton) {
