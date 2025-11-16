@@ -799,27 +799,27 @@ async function expandThinkingBlocks() {
         console.log(`  Expanding thinking block ${totalProcessed} (pass ${passNumber}, ${i + 1}/${buttonsToExpand.length})`);
         button.click();
 
-        // Mark this container as processed immediately
-        expandedContainers.add(containerId);
-
         // Verify expansion (retry up to 10 times)
         let verified = false;
         for (let retry = 0; retry < 10; retry++) {
           await new Promise(resolve => setTimeout(resolve, 500));
 
-          // Check if content appeared - use actual Gemini selectors
-          const thoughtsContent = container?.querySelector('[class*="model-thoughts"], [class*="thinking"], [class*="thought"]');
+          // Check if content appeared - look for thoughts-content-expanded class specifically
+          const thoughtsContentExpanded = container?.querySelector('[class*="thoughts-content-expanded"]');
 
-          if (thoughtsContent && thoughtsContent.textContent.trim().length > 50) {
+          if (thoughtsContentExpanded && thoughtsContentExpanded.textContent.trim().length > 50) {
             verified = true;
-            console.log(`  ✓ Verified thinking block ${totalProcessed}`);
+            console.log(`  ✓ Verified thinking block ${totalProcessed} (expanded content found)`);
             expandedCount++;
             break;
           }
         }
 
-        if (!verified) {
-          console.warn(`  ⚠ Failed to verify thinking block ${totalProcessed}`);
+        if (verified) {
+          // Only mark as processed if expansion was verified
+          expandedContainers.add(containerId);
+        } else {
+          console.warn(`  ⚠ Failed to verify thinking block ${totalProcessed} - will retry on next pass`);
         }
       } catch (e) {
         console.error(`  Error expanding button ${totalProcessed}:`, e);
