@@ -805,9 +805,11 @@ async function expandAndExtractAllThinkingBlocks() {
             thinkingBlocksMap.set(containerId, { thinking_stages: stages });
             totalExtracted++;
             console.log(`  ✓ Extracted ${stages.length} stages`);
+          } else {
+            console.warn(`  ⚠ Extraction function failed (content found, textLen=${expandedContent.textContent.length}, but extractThinkingStages returned ${stages ? 'empty array' : 'null'})`);
           }
         } else {
-          console.warn(`  ⚠ Expansion failed`);
+          console.warn(`  ⚠ Expansion timeout (content never appeared within 5s)`);
         }
 
         processedContainers.add(containerId);

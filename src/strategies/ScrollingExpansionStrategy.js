@@ -116,10 +116,10 @@ class ScrollingExpansionStrategy {
               totalExtracted++;
               console.log(`    ✓ Extracted ${extracted.thinking_stages.length} stages`);
             } else {
-              console.warn(`    ⚠ Extraction failed`);
+              console.warn(`    ⚠ Extraction function failed (content found, textLen=${expandedContent.textContent.length}, but extraction returned ${extracted ? 'empty/null' : 'null'})`);
             }
           } else {
-            console.warn(`    ⚠ Expansion timeout`);
+            console.warn(`    ⚠ Expansion timeout (content never appeared within 5s)`);
           }
 
           processedContainers.add(containerId);
