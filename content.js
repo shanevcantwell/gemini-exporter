@@ -1177,8 +1177,8 @@ async function extractStructuredConversation() {
 
       // Use pre-extracted thinking blocks from map (already extracted during batch expansion)
       // Use stable ID for lookup (survives DOM virtualization)
-      const containerId = getStableContainerId(container);
-      const preExtractedThinking = thinkingBlocksMap.get(containerId);
+      const stableId = getStableContainerId(container);
+      const preExtractedThinking = thinkingBlocksMap.get(stableId);
 
       if (preExtractedThinking && preExtractedThinking.thinking_stages) {
         exchangeMessages.push({
