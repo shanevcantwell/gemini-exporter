@@ -997,10 +997,16 @@ async function extractStructuredConversation() {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Step 5: Extract exchanges from DOM using conversation-container as parent
+    // Step 4c: Capture raw HTML BEFORE extraction (forensic evidence)
     if (!main) {
       return { success: false, error: 'Main element not found' };
     }
+
+    console.log('Capturing raw HTML for forensic evidence...');
+    const rawHTML = main.outerHTML;
+    console.log(`  Raw HTML captured: ${rawHTML.length.toLocaleString()} characters`);
+
+    // Step 5: Extract exchanges from DOM using conversation-container as parent
 
     // Find all conversation containers (each wraps one complete turn)
     const conversationContainers = Array.from(main.querySelectorAll('.conversation-container'));
@@ -1045,9 +1051,17 @@ async function extractStructuredConversation() {
 
       // Extract thinking block if present
       const thinkingButton = container.querySelector('button[data-test-id="thoughts-header-button"]');
-      const thinkingContent = container.querySelector('[class*="model-thoughts"], [class*="thinking"]');
+      const thinkingContent = container.querySelector('[class*="model-thoughts"], [class*="thinking"]') ||
+                             container.querySelector('[class*="thought"]');  // Fallback selector
 
       if (thinkingButton && thinkingContent) {
+        // DEBUG: Log DOM structure to understand failure
+        console.log(`    DEBUG: Thinking content found, analyzing structure...`);
+        console.log(`      - outerHTML length: ${thinkingContent.outerHTML.length}`);
+        console.log(`      - textContent length: ${thinkingContent.textContent.trim().length}`);
+        console.log(`      - className: ${thinkingContent.className}`);
+        console.log(`      - children count: ${thinkingContent.children.length}`);
+
         const stages = extractThinkingStages(thinkingContent);
 
         if (stages && stages.length > 0) {
@@ -1061,10 +1075,31 @@ async function extractStructuredConversation() {
           });
           console.log(`    Thinking: ${stages.length} stages found`);
         } else {
-          console.log(`    Thinking button present but no stages extracted`);
+          console.warn(`    ⚠️ BLOCKER: Thinking button present but no stages extracted`);
+          console.warn(`      Button text: "${thinkingButton.textContent}"`);
+          console.warn(`      Content preview: "${thinkingContent.textContent.trim().substring(0, 100)}..."`);
+          console.warn(`      First 500 chars of HTML:`);
+          console.warn(thinkingContent.innerHTML.substring(0, 500));
+
+          // FALLBACK: Extract as raw text if parsing fails
+          const rawText = thinkingContent.textContent.trim();
+          if (rawText.length > 50) {
+            console.warn(`      → Using FALLBACK: raw text extraction (${rawText.length} chars)`);
+            exchangeMessages.push({
+              message_index: messageIndex++,
+              speaker: 'Gemini',
+              message_type: 'thinking',
+              timestamp: null,
+              text: rawText,  // Store as raw text
+              thinking_stages: [{
+                stage_name: 'UNPARSED_THINKING',
+                text: rawText
+              }]
+            });
+          }
         }
       } else {
-        console.log(`    No thinking content found`);
+        console.log(`    No thinking content found (button: ${!!thinkingButton}, content: ${!!thinkingContent})`);
       }
 
       // Extract ALL markdown-main-panel elements (raw, no deduplication)
@@ -1129,6 +1164,12 @@ async function extractStructuredConversation() {
       export_version: '2.0-raw',
       export_type: 'raw',
       export_note: 'Raw DOM extraction with all duplicates preserved. Post-processing required to deduplicate and clean data.',
+
+      // Forensic evidence (ADR-001: Raw HTML Preservation)
+      raw_html: rawHTML,
+      raw_html_size_bytes: rawHTML.length,
+
+      // Structured data
       exchange_count: exchanges.length,
       message_count: messageIndex,
       exchanges: exchanges
