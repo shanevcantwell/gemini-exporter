@@ -709,6 +709,9 @@ async function scrollAndGetConversations(scrollCount = 5) {
       return { success: false, error: 'Scrollable sidebar not found' };
     }
 
+    // Count items BEFORE scrolling
+    const itemsBefore = document.querySelectorAll('div.conversation-items-container').length;
+
     // Scroll incrementally
     for (let i = 0; i < scrollCount; i++) {
       sidebar.scrollTop = sidebar.scrollHeight;
@@ -738,7 +741,10 @@ async function scrollAndGetConversations(scrollCount = 5) {
       }
     }
 
-    console.log(`After ${scrollCount} scrolls: ${items.length} items found, ${conversations.length} IDs extracted, ${skipped.length} skipped`);
+    // Check if new items were loaded
+    const newItemsLoaded = items.length > itemsBefore;
+
+    console.log(`After ${scrollCount} scrolls: ${items.length} items found (${items.length - itemsBefore} new), ${conversations.length} IDs extracted, ${skipped.length} skipped`);
     if (skipped.length > 0) {
       console.warn('⚠️ Skipped conversations (no ID extracted):');
       skipped.forEach(s => console.warn(`  [${s.index}] ${s.title}`));
@@ -747,7 +753,7 @@ async function scrollAndGetConversations(scrollCount = 5) {
     return {
       success: true,
       conversations: conversations,
-      canScrollMore: sidebar.scrollTop + sidebar.clientHeight < sidebar.scrollHeight
+      canScrollMore: newItemsLoaded  // If new items loaded, we can probably load more
     };
   } catch (error) {
     console.error('Error in scrollAndGetConversations:', error);
