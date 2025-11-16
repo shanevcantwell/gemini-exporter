@@ -95,9 +95,9 @@ class ScrollingExpansionStrategy {
         const container = nextButton.closest('.conversation-container');
 
         try {
-          // Scroll into view
-          nextButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          await this._wait(300);
+          // Scroll into view (instant to avoid animation timing issues)
+          nextButton.scrollIntoView({ behavior: 'instant', block: 'center' });
+          await this._wait(800);
 
           console.log(`  [${totalExtracted + 1}] Expanding thinking block...`);
           nextButton.click();
