@@ -40,6 +40,15 @@ class ScrollingExpansionStrategy {
   }
 
   /**
+   * Generate stable ID from container content (survives DOM virtualization)
+   * @private
+   */
+  _getStableContainerId(container) {
+    // Use first 100 chars of text content as stable identifier
+    return container.textContent.substring(0, 100).replace(/\s+/g, ' ').trim();
+  }
+
+  /**
    * Expand and extract ALL thinking blocks by scrolling through conversation
    * @returns {Promise<{thinkingBlocksMap: Map, totalExtracted: number}>}
    */
@@ -49,9 +58,9 @@ class ScrollingExpansionStrategy {
       throw new Error('Main element not found');
     }
 
-    const thinkingBlocksMap = new Map(); // Map: container element -> thinking content
+    const thinkingBlocksMap = new Map(); // Maps: stableId (string) -> thinking content
     let totalExtracted = 0;
-    const processedContainers = new Set();
+    const processedContainers = new Set(); // Stores: stableId (string)
 
     console.log('=== ScrollingExpansionStrategy: Starting one-at-a-time expansion ===');
 
@@ -72,7 +81,8 @@ class ScrollingExpansionStrategy {
       const allButtons = Array.from(document.querySelectorAll(this.buttonSelector));
       const nextButton = allButtons.find(btn => {
         const container = btn.closest('.conversation-container');
-        if (processedContainers.has(container)) return false;
+        const containerId = this._getStableContainerId(container);
+        if (processedContainers.has(containerId)) return false;
         if (!btn.textContent.toLowerCase().includes('show thinking')) return false;
 
         // Don't check viewport - just find next unprocessed button
@@ -94,12 +104,14 @@ class ScrollingExpansionStrategy {
           // Wait for expansion with retries
           const expandedContent = await this._waitForExpansion(container);
 
+          const containerId = this._getStableContainerId(container);
+
           if (expandedContent) {
             // Extract IMMEDIATELY before DOM virtualizes it away
             const extracted = this.extractionFunction(expandedContent);
 
             if (extracted && extracted.thinking_stages && extracted.thinking_stages.length > 0) {
-              thinkingBlocksMap.set(container, extracted);
+              thinkingBlocksMap.set(containerId, extracted);
               totalExtracted++;
               console.log(`    ✓ Extracted ${extracted.thinking_stages.length} stages`);
             } else {
@@ -109,11 +121,12 @@ class ScrollingExpansionStrategy {
             console.warn(`    ⚠ Expansion timeout`);
           }
 
-          processedContainers.add(container);
+          processedContainers.add(containerId);
 
         } catch (e) {
           console.error(`    Error:`, e);
-          processedContainers.add(container);
+          const containerId = this._getStableContainerId(container);
+          processedContainers.add(containerId);
         }
 
         // Wait for DOM to settle
