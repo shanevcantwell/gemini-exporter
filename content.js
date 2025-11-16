@@ -1085,16 +1085,47 @@ async function extractStructuredConversation() {
     if (main) {
       const initialContainers = main.querySelectorAll('.conversation-container').length;
       console.log(`Initial containers in DOM: ${initialContainers}`);
-      console.log(`Starting scroll position: ${main.scrollTop} (conversation opens at bottom)`);
+      console.log(`Starting scroll position: ${main.scrollTop}, scrollHeight: ${main.scrollHeight}`);
 
-      // First, scroll UP to the very top to load all older exchanges
-      console.log('Scrolling UP to load older exchanges...');
-      const scrollUpSteps = 10;
-      for (let i = 0; i < scrollUpSteps; i++) {
-        main.scrollTop = 0;  // Keep scrolling to top
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const containers = main.querySelectorAll('.conversation-container').length;
-        console.log(`  Scroll up step ${i + 1}: ${containers} containers loaded`);
+      // Helper to dispatch scroll event (triggers Gemini's lazy-loading listeners)
+      const triggerScroll = () => {
+        main.dispatchEvent(new Event('scroll', { bubbles: true }));
+      };
+
+      // First, scroll UP incrementally to load all older exchanges
+      console.log('Scrolling UP incrementally to trigger lazy-loading...');
+      let previousContainerCount = initialContainers;
+      let stableIterations = 0;
+      const maxStableIterations = 5; // Stop if count stable for 5 iterations
+
+      // Scroll up in small increments from current position to top
+      const scrollStep = 500; // Pixels per step
+      let currentPosition = main.scrollTop;
+
+      while (currentPosition > 0 || stableIterations < maxStableIterations) {
+        // Scroll up by scrollStep pixels
+        currentPosition = Math.max(0, currentPosition - scrollStep);
+        main.scrollTop = currentPosition;
+        triggerScroll();
+
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        const currentContainers = main.querySelectorAll('.conversation-container').length;
+        console.log(`  Scroll UP to ${currentPosition}px: ${currentContainers} containers`);
+
+        // Check if new content loaded
+        if (currentContainers > previousContainerCount) {
+          console.log(`    (+${currentContainers - previousContainerCount} new containers loaded!)`);
+          previousContainerCount = currentContainers;
+          stableIterations = 0; // Reset counter
+        } else {
+          stableIterations++;
+        }
+
+        // If we've reached top and count has been stable, we're done scrolling up
+        if (currentPosition === 0 && stableIterations >= maxStableIterations) {
+          break;
+        }
       }
 
       // Wait for rendering to stabilize at top
@@ -1103,22 +1134,47 @@ async function extractStructuredConversation() {
       const afterScrollUpContainers = main.querySelectorAll('.conversation-container').length;
       console.log(`After scrolling to top: ${afterScrollUpContainers} containers (+${afterScrollUpContainers - initialContainers})`);
 
-      // Now scroll DOWN to bottom to ensure everything is rendered
-      console.log('Scrolling DOWN to ensure all exchanges rendered...');
-      const scrollDownSteps = 10;
-      for (let i = 0; i < scrollDownSteps; i++) {
-        main.scrollTop = main.scrollHeight;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Now scroll DOWN incrementally to ensure everything is rendered
+      console.log('Scrolling DOWN incrementally...');
+      currentPosition = 0;
+      stableIterations = 0;
+      previousContainerCount = afterScrollUpContainers;
+
+      while (currentPosition < main.scrollHeight || stableIterations < maxStableIterations) {
+        // Scroll down by scrollStep pixels
+        const maxScroll = main.scrollHeight - main.clientHeight;
+        currentPosition = Math.min(maxScroll, currentPosition + scrollStep);
+        main.scrollTop = currentPosition;
+        triggerScroll();
+
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        const currentContainers = main.querySelectorAll('.conversation-container').length;
+        console.log(`  Scroll DOWN to ${currentPosition}px: ${currentContainers} containers`);
+
+        if (currentContainers > previousContainerCount) {
+          console.log(`    (+${currentContainers - previousContainerCount} new containers loaded!)`);
+          previousContainerCount = currentContainers;
+          stableIterations = 0;
+        } else {
+          stableIterations++;
+        }
+
+        // If we've reached bottom and count has been stable, we're done
+        if (currentPosition >= maxScroll && stableIterations >= maxStableIterations) {
+          break;
+        }
       }
 
       // Wait for rendering to stabilize
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const finalContainers = main.querySelectorAll('.conversation-container').length;
-      console.log(`After full scroll cycle: ${finalContainers} total containers`);
+      console.log(`After full scroll cycle: ${finalContainers} total containers (+${finalContainers - initialContainers} total loaded)`);
 
       // Return to top for thinking block expansion
       main.scrollTop = 0;
+      triggerScroll();
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
