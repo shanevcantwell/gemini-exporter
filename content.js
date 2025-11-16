@@ -727,7 +727,112 @@ async function scrollAndGetConversations(scrollCount = 5) {
   }
 }
 
-async function expandThinkingBlocks() {
+// NEW: Expand and extract thinking blocks ONE AT A TIME while scrolling through entire conversation
+async function expandAndExtractAllThinkingBlocks() {
+  const main = document.querySelector('main');
+  if (!main) {
+    console.error('Main element not found');
+    return { thinkingBlocksMap: new Map(), totalExtracted: 0 };
+  }
+
+  const thinkingBlocksMap = new Map();
+  let totalExtracted = 0;
+  const processedContainers = new Set();
+
+  console.log('=== Starting one-at-a-time expansion with scroll ===');
+
+  const totalHeight = main.scrollHeight;
+  const viewportHeight = main.clientHeight;
+  const scrollIncrement = 100; // Small increments to trigger virtualization
+
+  // Scroll to absolute top
+  main.scrollTop = 0;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  let currentScrollPosition = 0;
+  let passCount = 0;
+
+  while (currentScrollPosition <= totalHeight) {
+    passCount++;
+
+    // Find ONE unexpanded thinking block currently in or near viewport
+    const allButtons = Array.from(document.querySelectorAll('button[data-test-id="thoughts-header-button"]'));
+    const nextButton = allButtons.find(btn => {
+      const container = btn.closest('.conversation-container');
+      if (processedContainers.has(container)) return false;
+      if (!btn.textContent.toLowerCase().includes('show thinking')) return false;
+
+      const rect = btn.getBoundingClientRect();
+      return rect.top >= -viewportHeight && rect.top < viewportHeight * 2; // Wide range
+    });
+
+    if (nextButton) {
+      const container = nextButton.closest('.conversation-container');
+
+      try {
+        // Scroll it into view
+        nextButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        console.log(`[${totalExtracted + 1}] Expanding thinking block...`);
+        nextButton.click();
+
+        // Wait for expansion
+        let expandedContent = null;
+        for (let retry = 0; retry < 10; retry++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          expandedContent = container.querySelector('[class*="thoughts-content-expanded"]');
+          if (expandedContent && expandedContent.textContent.trim().length > 50) break;
+          expandedContent = null;
+        }
+
+        if (expandedContent) {
+          // Extract IMMEDIATELY before scrolling away
+          const stages = extractThinkingStages(expandedContent);
+          if (stages && stages.length > 0) {
+            thinkingBlocksMap.set(container, { thinking_stages: stages });
+            totalExtracted++;
+            console.log(`  ✓ Extracted ${stages.length} stages`);
+          }
+        } else {
+          console.warn(`  ⚠ Expansion failed`);
+        }
+
+        processedContainers.add(container);
+
+      } catch (e) {
+        console.error(`  Error:`, e);
+        processedContainers.add(container); // Mark as processed to avoid infinite loop
+      }
+
+      // Continue searching from current position
+      continue;
+    }
+
+    // No more buttons found at current scroll position, scroll down slightly
+    currentScrollPosition += scrollIncrement;
+    main.scrollTop = currentScrollPosition;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Safety: if we've scrolled way past content and found nothing for a while, break
+    if (currentScrollPosition > totalHeight + viewportHeight && passCount > (totalHeight / scrollIncrement) * 1.5) {
+      console.log(`Reached end (scroll: ${currentScrollPosition}, height: ${totalHeight})`);
+      break;
+    }
+
+    // Safety limit
+    if (passCount > 1000) {
+      console.warn('Safety limit: 1000 passes');
+      break;
+    }
+  }
+
+  console.log(`\n=== Extraction complete: ${totalExtracted} thinking blocks ===`);
+  return { thinkingBlocksMap, totalExtracted };
+}
+
+// OLD: Single-pass expansion (doesn't handle DOM virtualization)
+async function expandThinkingBlocks_OLD() {
   // Keep expanding thinking blocks until no more unexpanded buttons are found
   let expandedCount = 0;
   let totalProcessed = 0;
@@ -979,12 +1084,12 @@ async function extractStructuredConversation() {
       }
     }
 
-    // Step 4: Expand all thinking blocks with verification
-    console.log('Expanding thinking blocks...');
-    const expandedCount = await expandThinkingBlocks();
-    console.log(`Expanded ${expandedCount} thinking blocks`);
+    // Step 4: Expand and extract ALL thinking blocks with batched scrolling
+    console.log('Expanding and extracting thinking blocks...');
+    const { thinkingBlocksMap, totalExtracted } = await expandAndExtractAllThinkingBlocks();
+    console.log(`Extracted ${totalExtracted} thinking blocks across all batches`);
 
-    // Step 4b: Capture raw HTML IMMEDIATELY after expansion (before scrolling virtualizes DOM)
+    // Step 4b: Capture raw HTML after expansion (for other content)
     console.log('Capturing raw HTML for forensic evidence (before scroll virtualization)...');
     const rawHTML = main ? main.outerHTML : '';
     console.log(`  Raw HTML captured: ${rawHTML.length.toLocaleString()} characters`);
@@ -1050,57 +1155,25 @@ async function extractStructuredConversation() {
         }
       }
 
-      // Extract thinking block if present
-      const thinkingButton = container.querySelector('button[data-test-id="thoughts-header-button"]');
-      const thinkingContent = container.querySelector('[class*="model-thoughts"], [class*="thinking"]') ||
-                             container.querySelector('[class*="thought"]');  // Fallback selector
+      // Use pre-extracted thinking blocks from map (already extracted during batch expansion)
+      const preExtractedThinking = thinkingBlocksMap.get(container);
 
-      if (thinkingButton && thinkingContent) {
-        // DEBUG: Log DOM structure to understand failure
-        console.log(`    DEBUG: Thinking content found, analyzing structure...`);
-        console.log(`      - outerHTML length: ${thinkingContent.outerHTML.length}`);
-        console.log(`      - textContent length: ${thinkingContent.textContent.trim().length}`);
-        console.log(`      - className: ${thinkingContent.className}`);
-        console.log(`      - children count: ${thinkingContent.children.length}`);
-
-        const stages = extractThinkingStages(thinkingContent);
-
-        if (stages && stages.length > 0) {
-          exchangeMessages.push({
-            message_index: messageIndex++,
-            speaker: 'Gemini',
-            message_type: 'thinking',
-            timestamp: null,
-            text: null,
-            thinking_stages: stages
-          });
-          console.log(`    Thinking: ${stages.length} stages found`);
-        } else {
-          console.warn(`    ⚠️ BLOCKER: Thinking button present but no stages extracted`);
-          console.warn(`      Button text: "${thinkingButton.textContent}"`);
-          console.warn(`      Content preview: "${thinkingContent.textContent.trim().substring(0, 100)}..."`);
-          console.warn(`      First 500 chars of HTML:`);
-          console.warn(thinkingContent.innerHTML.substring(0, 500));
-
-          // FALLBACK: Extract as raw text if parsing fails
-          const rawText = thinkingContent.textContent.trim();
-          if (rawText.length > 50) {
-            console.warn(`      → Using FALLBACK: raw text extraction (${rawText.length} chars)`);
-            exchangeMessages.push({
-              message_index: messageIndex++,
-              speaker: 'Gemini',
-              message_type: 'thinking',
-              timestamp: null,
-              text: rawText,  // Store as raw text
-              thinking_stages: [{
-                stage_name: 'UNPARSED_THINKING',
-                text: rawText
-              }]
-            });
-          }
-        }
+      if (preExtractedThinking && preExtractedThinking.thinking_stages) {
+        exchangeMessages.push({
+          message_index: messageIndex++,
+          speaker: 'Gemini',
+          message_type: 'thinking',
+          timestamp: null,
+          text: null,
+          thinking_stages: preExtractedThinking.thinking_stages
+        });
+        console.log(`    Thinking: ${preExtractedThinking.thinking_stages.length} stages (pre-extracted)`);
       } else {
-        console.log(`    No thinking content found (button: ${!!thinkingButton}, content: ${!!thinkingContent})`);
+        // No thinking block for this container (or extraction failed)
+        const thinkingButton = container.querySelector('button[data-test-id="thoughts-header-button"]');
+        if (thinkingButton) {
+          console.log(`    Thinking button present but not extracted (may have failed expansion)`);
+        }
       }
 
       // Extract ALL markdown-main-panel elements (raw, no deduplication)
