@@ -438,12 +438,17 @@
                         }
                     }
 
-                    // Extract Gemini response (assistant_response message)
-                    const responseMessage = messages.find(msg =>
+                    // Extract Gemini response (last assistant_response message with highest duplicate_index)
+                    const responseMessages = messages.filter(msg =>
                         msg.speaker === 'Gemini' &&
                         msg.message_type === 'assistant_response' &&
                         msg.text
                     );
+
+                    // Get the last one (highest duplicate_index)
+                    const responseMessage = responseMessages.length > 0
+                        ? responseMessages[responseMessages.length - 1]
+                        : null;
 
                     if (responseMessage) {
                         lines.push(`### 🤖 Gemini`);
