@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Conversation Pretty Printer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Consolas", monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 8px;
+            font-size: 1.8em;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 0.95em;
+        }
+
+        .back-link {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #007bff;
+            text-decoration: none;
+            font-size: 1.1em;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+            padding: 15px 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #aaa;
+        }
+
+        .controls input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button.secondary {
+            background: #555;
+        }
+
+        button.secondary:hover {
+            background: #666;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #3a3a3a;
+        }
+
+        .panel:last-child {
+            border-right: none;
+        }
+
+        .panel-header {
+            background: #2a2a2a;
+            padding: 10px 15px;
+            border-bottom: 1px solid #3a3a3a;
+            font-weight: bold;
+            color: #aaa;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        textarea {
+            flex: 1;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            border: none;
+            padding: 15px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        textarea::placeholder {
+            color: #555;
+        }
+
+        .output-preview {
+            flex: 1;
+            background: #1e1e1e;
+            padding: 20px;
+            overflow-y: auto;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+        }
+
+        .error {
+            background: #3a1a1a;
+            border: 1px solid #5a2a2a;
+            color: #ff6b6b;
+            padding: 10px 15px;
+            margin: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .stats {
+            background: #2a2a2a;
+            border-top: 1px solid #3a3a3a;
+            padding: 8px 15px;
+            font-size: 0.85em;
+            color: #888;
+        }
+
+        .stats span {
+            margin-right: 20px;
+        }
+
+        /* Markdown Preview Styles */
+        .markdown-preview h1 { color: #fff; margin: 20px 0 10px; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .markdown-preview h2 { color: #ccc; margin: 25px 0 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .markdown-preview h3 { color: #aaa; margin: 20px 0 10px; }
+        .markdown-preview h4 { color: #888; margin: 15px 0 8px; font-style: italic; }
+        .markdown-preview p { margin: 10px 0; }
+        .markdown-preview blockquote {
+            border-left: 4px solid #007bff;
+            padding-left: 15px;
+            margin: 15px 0;
+            color: #aaa;
+            font-style: italic;
+        }
+        .markdown-preview pre {
+            background: #0d0d0d;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .markdown-preview code {
+            background: #2a2a2a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", monospace;
+            font-size: 0.9em;
+        }
+        .markdown-preview pre code {
+            background: none;
+            padding: 0;
+        }
+        .markdown-preview hr {
+            border: none;
+            border-top: 1px solid #444;
+            margin: 30px 0;
+        }
+        .markdown-preview .metadata {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .markdown-preview .metadata p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        .markdown-preview .thinking-block {
+            background: #1a2a3a;
+            border-left: 4px solid #ffa500;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .markdown-preview .thinking-stage {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0d1a27;
+            border-radius: 3px;
+        }
+        .markdown-preview .thinking-stage strong {
+            color: #ffa500;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="index.html" class="back-link">← Back</a>
+        <h1>📝 Gemini Conversation Pretty Printer</h1>
+        <p class="subtitle">Convert Gemini export JSON to readable Markdown</p>
+    </header>
+
+    <div class="controls">
+        <button id="convert-btn">Convert to Markdown</button>
+        <button id="clear-btn" class="secondary">Clear</button>
+        <button id="copy-btn" class="secondary">Copy Markdown</button>
+        <label>
+            <input type="checkbox" id="include-thinking" checked>
+            Include Thinking Blocks
+        </label>
+        <label>
+            <input type="checkbox" id="include-metadata" checked>
+            Include Metadata
+        </label>
+        <label>
+            <input type="checkbox" id="show-preview" checked>
+            Show Preview
+        </label>
+        <label>
+            <input type="checkbox" id="dedupe" checked>
+            Deduplicate Messages
+        </label>
+    </div>
+
+    <div class="main-content">
+        <div class="panel">
+            <div class="panel-header">Input (Paste Gemini Export JSON)</div>
+            <textarea id="input" placeholder='Paste your Gemini export JSON here...'></textarea>
+            <div class="stats">
+                <span id="input-chars">Characters: 0</span>
+                <span id="input-exchanges">Exchanges: 0</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header" id="output-header">Output (Markdown)</div>
+            <textarea id="output" readonly placeholder='Markdown output will appear here...'></textarea>
+            <div class="output-preview markdown-preview" id="preview" style="display: none;"></div>
+            <div class="stats">
+                <span id="output-chars">Characters: 0</span>
+                <span id="output-lines">Lines: 0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const inputArea = document.getElementById('input');
+        const outputArea = document.getElementById('output');
+        const previewArea = document.getElementById('preview');
+        const convertBtn = document.getElementById('convert-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const includeThinkingCheckbox = document.getElementById('include-thinking');
+        const includeMetadataCheckbox = document.getElementById('include-metadata');
+        const showPreviewCheckbox = document.getElementById('show-preview');
+        const dedupeCheckbox = document.getElementById('dedupe');
+        const outputHeader = document.getElementById('output-header');
+
+        // Update stats
+        function updateStats() {
+            const inputText = inputArea.value;
+            const outputText = outputArea.value;
+
+            document.getElementById('input-chars').textContent = `Characters: ${inputText.length}`;
+
+            try {
+                const data = JSON.parse(inputText || '{}');
+                const exchangeCount = data.exchanges ? data.exchanges.length : 0;
+                document.getElementById('input-exchanges').textContent = `Exchanges: ${exchangeCount}`;
+            } catch {
+                document.getElementById('input-exchanges').textContent = `Exchanges: 0`;
+            }
+
+            document.getElementById('output-chars').textContent = `Characters: ${outputText.length}`;
+            document.getElementById('output-lines').textContent = `Lines: ${outputText.split('\n').length}`;
+        }
+
+        inputArea.addEventListener('input', updateStats);
+
+        // Toggle preview mode
+        showPreviewCheckbox.addEventListener('change', () => {
+            if (showPreviewCheckbox.checked) {
+                outputArea.style.display = 'none';
+                previewArea.style.display = 'block';
+                outputHeader.textContent = 'Output (Preview)';
+            } else {
+                outputArea.style.display = 'block';
+                previewArea.style.display = 'none';
+                outputHeader.textContent = 'Output (Markdown)';
+            }
+        });
+
+        // Deduplicate messages by text
+        function deduplicateMessages(messages) {
+            const seen = new Set();
+            return messages.filter(msg => {
+                const key = `${msg.speaker}:${msg.message_type}:${msg.text}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        // Convert to Markdown
+        function convertToMarkdown(data) {
+            const lines = [];
+            const includeThinking = includeThinkingCheckbox.checked;
+            const includeMetadata = includeMetadataCheckbox.checked;
+            const shouldDedupe = dedupeCheckbox.checked;
+
+            // Header
+            lines.push(`# ${data.title || 'Untitled Conversation'}`);
+            lines.push('');
+
+            // Metadata
+            if (includeMetadata) {
+                lines.push('---');
+                lines.push('');
+                if (data.conversation_id) lines.push(`**Conversation ID:** \`${data.conversation_id}\``);
+                if (data.url) lines.push(`**URL:** ${data.url}`);
+                if (data.export_timestamp) lines.push(`**Exported:** ${new Date(data.export_timestamp).toLocaleString()}`);
+                if (data.exchange_count !== undefined) lines.push(`**Exchanges:** ${data.exchange_count}`);
+                if (data.message_count !== undefined) lines.push(`**Messages:** ${data.message_count}`);
+                lines.push('');
+                lines.push('---');
+                lines.push('');
+            }
+
+            // Exchanges
+            if (data.exchanges && data.exchanges.length > 0) {
+                data.exchanges.forEach((exchange, idx) => {
+                    lines.push(`## Exchange ${idx + 1}`);
+                    lines.push('');
+
+                    let messages = exchange.messages || [];
+
+                    // Deduplicate if requested
+                    if (shouldDedupe) {
+                        messages = deduplicateMessages(messages);
+                    }
+
+                    messages.forEach((msg) => {
+                        // User messages
+                        if (msg.speaker === 'User' && msg.text) {
+                            lines.push(`### 👤 User`);
+                            lines.push('');
+                            lines.push(msg.text);
+                            lines.push('');
+                        }
+
+                        // Gemini thinking blocks
+                        if (msg.speaker === 'Gemini' && msg.message_type === 'thinking' && includeThinking) {
+                            if (msg.thinking_stages && msg.thinking_stages.length > 0) {
+                                lines.push(`### 🤔 Thinking Process`);
+                                lines.push('');
+
+                                msg.thinking_stages.forEach((stage) => {
+                                    lines.push(`#### ${stage.stage_name}`);
+                                    lines.push('');
+                                    lines.push(`> ${stage.text.replace(/\n/g, '\n> ')}`);
+                                    lines.push('');
+                                });
+                            }
+                        }
+
+                        // Gemini responses
+                        if (msg.speaker === 'Gemini' && msg.message_type === 'assistant_response' && msg.text) {
+                            lines.push(`### 🤖 Gemini`);
+                            lines.push('');
+                            lines.push(msg.text);
+                            lines.push('');
+                        }
+                    });
+
+                    lines.push('---');
+                    lines.push('');
+                });
+            }
+
+            return lines.join('\n');
+        }
+
+        // Simple Markdown to HTML
+        function markdownToHtml(markdown) {
+            let html = markdown;
+
+            // Headers
+            html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
+            html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+            html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+            html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+            // Blockquotes
+            html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+            // Bold
+            html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Horizontal rules
+            html = html.replace(/^---$/gim, '<hr>');
+
+            // Paragraphs
+            html = html.split('\n\n').map(para => {
+                if (para.startsWith('<h') || para.startsWith('<hr') || para.startsWith('<blockquote')) {
+                    return para;
+                }
+                return `<p>${para}</p>`;
+            }).join('\n');
+
+            return html;
+        }
+
+        // Convert button handler
+        convertBtn.addEventListener('click', () => {
+            try {
+                const inputText = inputArea.value.trim();
+                if (!inputText) {
+                    outputArea.value = '';
+                    previewArea.innerHTML = '';
+                    updateStats();
+                    return;
+                }
+
+                const data = JSON.parse(inputText);
+                const markdown = convertToMarkdown(data);
+
+                outputArea.value = markdown;
+                previewArea.innerHTML = markdownToHtml(markdown);
+
+                // Clear any previous errors
+                const existingError = document.querySelector('.error');
+                if (existingError) existingError.remove();
+
+                updateStats();
+            } catch (error) {
+                // Show error
+                const existingError = document.querySelector('.error');
+                if (existingError) existingError.remove();
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = `Error: ${error.message}`;
+                document.querySelector('.main-content').insertBefore(errorDiv, document.querySelector('.main-content').firstChild);
+
+                outputArea.value = '';
+                previewArea.innerHTML = '';
+                updateStats();
+            }
+        });
+
+        // Clear button
+        clearBtn.addEventListener('click', () => {
+            inputArea.value = '';
+            outputArea.value = '';
+            previewArea.innerHTML = '';
+            const existingError = document.querySelector('.error');
+            if (existingError) existingError.remove();
+            updateStats();
+        });
+
+        // Copy button
+        copyBtn.addEventListener('click', () => {
+            if (outputArea.value) {
+                const textToCopy = outputArea.value;
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '✓ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                });
+            }
+        });
+
+        // Auto-convert on option change
+        [includeThinkingCheckbox, includeMetadataCheckbox, dedupeCheckbox].forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                if (inputArea.value && outputArea.value) {
+                    convertBtn.click();
+                }
+            });
+        });
+
+        // Initial stats
+        updateStats();
+    </script>
+</body>
+</html>
