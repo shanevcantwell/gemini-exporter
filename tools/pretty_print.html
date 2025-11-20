@@ -259,16 +259,17 @@
             <input type="checkbox" id="show-preview" checked>
             Show Preview
         </label>
-        <label>
-            <input type="checkbox" id="dedupe" checked>
-            Deduplicate Messages
-        </label>
     </div>
 
     <div class="main-content">
         <div class="panel">
-            <div class="panel-header">Input (Paste Gemini Export JSON)</div>
-            <textarea id="input" placeholder='Paste your Gemini export JSON here...'></textarea>
+            <div class="panel-header">Input (Paste JSON or Drag & Drop File)</div>
+            <div id="drop-zone" style="position: relative; height: 100%; display: flex; flex-direction: column;">
+                <textarea id="input" placeholder='Paste JSON or drag & drop a .json file here...'></textarea>
+                <div id="drop-overlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 123, 255, 0.1); border: 3px dashed #007bff; pointer-events: none; align-items: center; justify-content: center; color: #007bff; font-size: 1.5em; font-weight: bold;">
+                    📁 Drop file here
+                </div>
+            </div>
             <div class="stats">
                 <span id="input-chars">Characters: 0</span>
                 <span id="input-exchanges">Exchanges: 0</span>
@@ -296,7 +297,6 @@
         const includeThinkingCheckbox = document.getElementById('include-thinking');
         const includeMetadataCheckbox = document.getElementById('include-metadata');
         const showPreviewCheckbox = document.getElementById('show-preview');
-        const dedupeCheckbox = document.getElementById('dedupe');
         const outputHeader = document.getElementById('output-header');
 
         // Update stats
@@ -320,6 +320,44 @@
 
         inputArea.addEventListener('input', updateStats);
 
+        // Drag and drop handling
+        const dropZone = document.getElementById('drop-zone');
+        const dropOverlay = document.getElementById('drop-overlay');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropOverlay.style.display = 'flex';
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            if (e.target === dropZone) {
+                dropOverlay.style.display = 'none';
+            }
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropOverlay.style.display = 'none';
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.name.endsWith('.json')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        inputArea.value = event.target.result;
+                        updateStats();
+                        // Auto-convert
+                        convertBtn.click();
+                    };
+                    reader.readAsText(file);
+                } else {
+                    alert('Please drop a .json file');
+                }
+            }
+        });
+
         // Toggle preview mode
         showPreviewCheckbox.addEventListener('change', () => {
             if (showPreviewCheckbox.checked) {
@@ -333,23 +371,11 @@
             }
         });
 
-        // Deduplicate messages by text
-        function deduplicateMessages(messages) {
-            const seen = new Set();
-            return messages.filter(msg => {
-                const key = `${msg.speaker}:${msg.message_type}:${msg.text}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-        }
-
-        // Convert to Markdown
+        // Convert to Markdown - Gemini export format aware
         function convertToMarkdown(data) {
             const lines = [];
             const includeThinking = includeThinkingCheckbox.checked;
             const includeMetadata = includeMetadataCheckbox.checked;
-            const shouldDedupe = dedupeCheckbox.checked;
 
             // Header
             lines.push(`# ${data.title || 'Untitled Conversation'}`);
@@ -375,45 +401,56 @@
                     lines.push(`## Exchange ${idx + 1}`);
                     lines.push('');
 
-                    let messages = exchange.messages || [];
+                    const messages = exchange.messages || [];
 
-                    // Deduplicate if requested
-                    if (shouldDedupe) {
-                        messages = deduplicateMessages(messages);
+                    // Extract user prompt (first occurrence only, duplicate_index: 0)
+                    const userMessage = messages.find(msg =>
+                        msg.speaker === 'User' && msg.duplicate_index === 0 && msg.text
+                    );
+
+                    if (userMessage) {
+                        lines.push(`### 👤 User`);
+                        lines.push('');
+                        lines.push(userMessage.text);
+                        lines.push('');
                     }
 
-                    messages.forEach((msg) => {
-                        // User messages
-                        if (msg.speaker === 'User' && msg.text) {
-                            lines.push(`### 👤 User`);
-                            lines.push('');
-                            lines.push(msg.text);
-                            lines.push('');
-                        }
+                    // Extract thinking stages (if enabled)
+                    if (includeThinking) {
+                        const thinkingMessage = messages.find(msg =>
+                            msg.speaker === 'Gemini' &&
+                            msg.message_type === 'thinking' &&
+                            msg.thinking_stages &&
+                            msg.thinking_stages.length > 0
+                        );
 
-                        // Gemini thinking blocks
-                        if (msg.speaker === 'Gemini' && msg.message_type === 'thinking' && includeThinking) {
-                            if (msg.thinking_stages && msg.thinking_stages.length > 0) {
-                                lines.push(`### 🤔 Thinking Process`);
+                        if (thinkingMessage) {
+                            lines.push(`### 🤔 Thinking`);
+                            lines.push('');
+
+                            // Flatten thinking stages sequentially
+                            thinkingMessage.thinking_stages.forEach((stage, stageIdx) => {
+                                lines.push(`**${stage.stage_name}**`);
                                 lines.push('');
-
-                                msg.thinking_stages.forEach((stage) => {
-                                    lines.push(`#### ${stage.stage_name}`);
-                                    lines.push('');
-                                    lines.push(`> ${stage.text.replace(/\n/g, '\n> ')}`);
-                                    lines.push('');
-                                });
-                            }
+                                lines.push(stage.text);
+                                lines.push('');
+                            });
                         }
+                    }
 
-                        // Gemini responses
-                        if (msg.speaker === 'Gemini' && msg.message_type === 'assistant_response' && msg.text) {
-                            lines.push(`### 🤖 Gemini`);
-                            lines.push('');
-                            lines.push(msg.text);
-                            lines.push('');
-                        }
-                    });
+                    // Extract Gemini response (assistant_response message)
+                    const responseMessage = messages.find(msg =>
+                        msg.speaker === 'Gemini' &&
+                        msg.message_type === 'assistant_response' &&
+                        msg.text
+                    );
+
+                    if (responseMessage) {
+                        lines.push(`### 🤖 Gemini`);
+                        lines.push('');
+                        lines.push(responseMessage.text);
+                        lines.push('');
+                    }
 
                     lines.push('---');
                     lines.push('');
@@ -519,7 +556,7 @@
         });
 
         // Auto-convert on option change
-        [includeThinkingCheckbox, includeMetadataCheckbox, dedupeCheckbox].forEach(checkbox => {
+        [includeThinkingCheckbox, includeMetadataCheckbox].forEach(checkbox => {
             checkbox.addEventListener('change', () => {
                 if (inputArea.value && outputArea.value) {
                     convertBtn.click();
