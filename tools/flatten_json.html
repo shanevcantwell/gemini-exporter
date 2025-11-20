@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Flattener</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Consolas", monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 8px;
+            font-size: 1.8em;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 0.95em;
+        }
+
+        .back-link {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #007bff;
+            text-decoration: none;
+            font-size: 1.1em;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+            padding: 15px 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #aaa;
+        }
+
+        .controls input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button.secondary {
+            background: #555;
+        }
+
+        button.secondary:hover {
+            background: #666;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #3a3a3a;
+        }
+
+        .panel:last-child {
+            border-right: none;
+        }
+
+        .panel-header {
+            background: #2a2a2a;
+            padding: 10px 15px;
+            border-bottom: 1px solid #3a3a3a;
+            font-weight: bold;
+            color: #aaa;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        textarea {
+            flex: 1;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            border: none;
+            padding: 15px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        textarea::placeholder {
+            color: #555;
+        }
+
+        .error {
+            background: #3a1a1a;
+            border: 1px solid #5a2a2a;
+            color: #ff6b6b;
+            padding: 10px 15px;
+            margin: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .stats {
+            background: #2a2a2a;
+            border-top: 1px solid #3a3a3a;
+            padding: 8px 15px;
+            font-size: 0.85em;
+            color: #888;
+        }
+
+        .stats span {
+            margin-right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="index.html" class="back-link">← Back</a>
+        <h1>📊 JSON Flattener</h1>
+        <p class="subtitle">Flatten nested JSON with dot notation paths</p>
+    </header>
+
+    <div class="controls">
+        <button id="flatten-btn">Flatten JSON</button>
+        <button id="clear-btn" class="secondary">Clear</button>
+        <button id="copy-btn" class="secondary">Copy Output</button>
+        <label>
+            <input type="checkbox" id="pretty-print" checked>
+            Pretty Print
+        </label>
+        <label>
+            <input type="checkbox" id="sort-keys">
+            Sort Keys
+        </label>
+    </div>
+
+    <div class="main-content">
+        <div class="panel">
+            <div class="panel-header">Input (Paste JSON)</div>
+            <textarea id="input" placeholder='Paste your JSON here, e.g.:
+{
+  "user": {
+    "name": "John",
+    "address": {
+      "city": "NYC"
+    }
+  },
+  "items": [1, 2, 3]
+}'></textarea>
+            <div class="stats">
+                <span id="input-lines">Lines: 0</span>
+                <span id="input-chars">Characters: 0</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Output (Flattened)</div>
+            <textarea id="output" readonly placeholder='Flattened JSON will appear here...'></textarea>
+            <div class="stats">
+                <span id="output-keys">Keys: 0</span>
+                <span id="output-chars">Characters: 0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const inputArea = document.getElementById('input');
+        const outputArea = document.getElementById('output');
+        const flattenBtn = document.getElementById('flatten-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const prettyPrintCheckbox = document.getElementById('pretty-print');
+        const sortKeysCheckbox = document.getElementById('sort-keys');
+
+        // Update stats
+        function updateStats() {
+            const inputText = inputArea.value;
+            const outputText = outputArea.value;
+
+            document.getElementById('input-lines').textContent = `Lines: ${inputText.split('\n').length}`;
+            document.getElementById('input-chars').textContent = `Characters: ${inputText.length}`;
+
+            try {
+                const outputObj = JSON.parse(outputText || '{}');
+                const keyCount = Object.keys(outputObj).length;
+                document.getElementById('output-keys').textContent = `Keys: ${keyCount}`;
+            } catch {
+                document.getElementById('output-keys').textContent = `Keys: 0`;
+            }
+            document.getElementById('output-chars').textContent = `Characters: ${outputText.length}`;
+        }
+
+        inputArea.addEventListener('input', updateStats);
+
+        // Flatten function
+        function flattenJSON(obj, prefix = '', result = {}) {
+            for (const key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    const newKey = prefix ? `${prefix}.${key}` : key;
+                    const value = obj[key];
+
+                    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                        // Recursively flatten nested objects
+                        flattenJSON(value, newKey, result);
+                    } else if (Array.isArray(value)) {
+                        // Flatten arrays with indexed keys
+                        value.forEach((item, index) => {
+                            const arrayKey = `${newKey}[${index}]`;
+                            if (item !== null && typeof item === 'object') {
+                                flattenJSON(item, arrayKey, result);
+                            } else {
+                                result[arrayKey] = item;
+                            }
+                        });
+                    } else {
+                        result[newKey] = value;
+                    }
+                }
+            }
+            return result;
+        }
+
+        // Flatten button handler
+        flattenBtn.addEventListener('click', () => {
+            try {
+                const inputText = inputArea.value.trim();
+                if (!inputText) {
+                    outputArea.value = '';
+                    updateStats();
+                    return;
+                }
+
+                const inputObj = JSON.parse(inputText);
+                let flattened = flattenJSON(inputObj);
+
+                // Sort keys if requested
+                if (sortKeysCheckbox.checked) {
+                    const sorted = {};
+                    Object.keys(flattened).sort().forEach(key => {
+                        sorted[key] = flattened[key];
+                    });
+                    flattened = sorted;
+                }
+
+                // Format output
+                if (prettyPrintCheckbox.checked) {
+                    outputArea.value = JSON.stringify(flattened, null, 2);
+                } else {
+                    outputArea.value = JSON.stringify(flattened);
+                }
+
+                // Clear any previous errors
+                const existingError = document.querySelector('.error');
+                if (existingError) existingError.remove();
+
+                updateStats();
+            } catch (error) {
+                // Show error
+                const existingError = document.querySelector('.error');
+                if (existingError) existingError.remove();
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = `Error: ${error.message}`;
+                document.querySelector('.main-content').insertBefore(errorDiv, document.querySelector('.main-content').firstChild);
+
+                outputArea.value = '';
+                updateStats();
+            }
+        });
+
+        // Clear button
+        clearBtn.addEventListener('click', () => {
+            inputArea.value = '';
+            outputArea.value = '';
+            const existingError = document.querySelector('.error');
+            if (existingError) existingError.remove();
+            updateStats();
+        });
+
+        // Copy button
+        copyBtn.addEventListener('click', () => {
+            if (outputArea.value) {
+                outputArea.select();
+                document.execCommand('copy');
+
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
+            }
+        });
+
+        // Auto-flatten on checkbox change
+        prettyPrintCheckbox.addEventListener('change', () => {
+            if (outputArea.value) {
+                flattenBtn.click();
+            }
+        });
+
+        sortKeysCheckbox.addEventListener('change', () => {
+            if (outputArea.value) {
+                flattenBtn.click();
+            }
+        });
+
+        // Initial stats
+        updateStats();
+    </script>
+</body>
+</html>

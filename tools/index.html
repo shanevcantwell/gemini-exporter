@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Exporter Tools</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 50px;
+            font-size: 1.1em;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 40px;
+        }
+
+        .tool-card {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 30px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .tool-card:hover {
+            background: #333;
+            border-color: #007bff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        }
+
+        .tool-card h2 {
+            color: #007bff;
+            margin-bottom: 12px;
+            font-size: 1.5em;
+        }
+
+        .tool-card p {
+            color: #aaa;
+            margin-bottom: 15px;
+        }
+
+        .tool-card .meta {
+            font-size: 0.85em;
+            color: #666;
+            border-top: 1px solid #3a3a3a;
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background: #007bff;
+            color: #fff;
+            border-radius: 3px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        footer a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛠️ Gemini Exporter Tools</h1>
+        <p class="subtitle">Utilities for working with exported conversation data</p>
+
+        <div class="tools-grid">
+            <a href="../preserve_evidence/preserve_evidence.html" class="tool-card">
+                <h2>⚖️ Evidence Preservation</h2>
+                <p>Create tamper-proof evidence packages from conversation files with SHA-256 verification and chain of custody tracking.</p>
+                <div class="meta">
+                    <strong>Use case:</strong> Legal evidence, research archival<br>
+                    <strong>Output:</strong> JSON package + SHA-256 hash + receipt
+                </div>
+            </a>
+
+            <a href="flatten_json.html" class="tool-card">
+                <h2>📊 JSON Flattener</h2>
+                <p>Flatten nested JSON structures into single-level key-value pairs with dot notation paths.</p>
+                <div class="meta">
+                    <strong>Use case:</strong> Simplify nested exports for analysis<br>
+                    <strong>Output:</strong> Flattened JSON with dot paths
+                    <span class="badge">NEW</span>
+                </div>
+            </a>
+        </div>
+
+        <footer>
+            <p>Part of the <a href="https://github.com/shanevcantwell/gemini-exporter">Gemini Conversation Exporter</a> project</p>
+        </footer>
+    </div>
+</body>
+</html>
