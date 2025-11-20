@@ -413,6 +413,7 @@
                         lines.push('');
                         lines.push(userMessage.text);
                         lines.push('');
+                        lines.push(''); // Extra spacing after user message
                     }
 
                     // Extract thinking stages (if enabled)
@@ -428,12 +429,23 @@
                             lines.push(`### 🤔 Thinking`);
                             lines.push('');
 
-                            // Flatten thinking stages sequentially
-                            thinkingMessage.thinking_stages.forEach((stage, stageIdx) => {
+                            // Deduplicate thinking stages by stage_name
+                            const seenStages = new Set();
+                            const uniqueStages = thinkingMessage.thinking_stages.filter(stage => {
+                                if (seenStages.has(stage.stage_name)) {
+                                    return false;
+                                }
+                                seenStages.add(stage.stage_name);
+                                return true;
+                            });
+
+                            // Flatten thinking stages sequentially with spacing
+                            uniqueStages.forEach((stage, stageIdx) => {
                                 lines.push(`**${stage.stage_name}**`);
                                 lines.push('');
                                 lines.push(stage.text);
                                 lines.push('');
+                                lines.push(''); // Extra blank line between stages
                             });
                         }
                     }
@@ -451,6 +463,7 @@
                         : null;
 
                     if (responseMessage) {
+                        lines.push(''); // Extra spacing before response
                         lines.push(`### 🤖 Gemini`);
                         lines.push('');
                         lines.push(responseMessage.text);
