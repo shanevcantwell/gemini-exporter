@@ -1356,7 +1356,76 @@ async function extractStructuredConversation() {
     console.log(`\n=== Extraction Summary ===`);
     console.log(`Extracted ${exchanges.length} exchanges with ${messageIndex} total messages`);
 
-    // Step 5: Build complete conversation object
+    // Step 6: Extract images for attachment downloading
+    console.log('Extracting images...');
+    const images = [];
+    const imgElements = main.querySelectorAll('img');
+
+    console.log(`Found ${imgElements.length} img elements`);
+
+    for (let i = 0; i < imgElements.length; i++) {
+      const img = imgElements[i];
+      const src = img.src || img.getAttribute('src');
+
+      if (!src || src.startsWith('data:')) continue; // Skip data URLs and missing srcs
+
+      // Only capture actual image files (not UI elements like avatars)
+      const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)/i;
+      const isImageFile = imageExtensions.test(src) ||
+                          src.includes('image/') ||
+                          img.naturalWidth > 0; // Has dimensions = real image
+
+      // Skip small images (likely avatars/icons) and known avatar domains
+      const width = img.naturalWidth || img.width || 0;
+      const height = img.naturalHeight || img.height || 0;
+      const isSmallImage = width < 100 || height < 100;
+      const isAvatar = src.includes('googleusercontent.com/a/') ||
+                       src.includes('/avatar/') ||
+                       src.includes('profile-photo');
+
+      if (isImageFile && !isSmallImage && !isAvatar) {
+        try {
+          // Convert to data URL to avoid CORS issues
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = img.naturalWidth || img.width || 800;
+          canvas.height = img.naturalHeight || img.height || 600;
+
+          try {
+            ctx.drawImage(img, 0, 0);
+            const dataUrl = canvas.toDataURL('image/png');
+
+            images.push({
+              index: i,
+              originalSrc: src,
+              dataUrl: dataUrl,
+              alt: img.alt || `Image ${i + 1}`,
+              width: img.naturalWidth || img.width,
+              height: img.naturalHeight || img.height
+            });
+
+            console.log(`Captured image ${i + 1}: ${src.substring(0, 60)}...`);
+          } catch (e) {
+            // CORS error - try to save the URL anyway
+            console.log(`CORS error for image ${i + 1}, saving URL: ${src.substring(0, 60)}...`);
+            images.push({
+              index: i,
+              originalSrc: src,
+              dataUrl: null, // Will download via background script
+              alt: img.alt || `Image ${i + 1}`,
+              width: img.naturalWidth || img.width,
+              height: img.naturalHeight || img.height
+            });
+          }
+        } catch (e) {
+          console.error(`Error capturing image ${i + 1}:`, e);
+        }
+      }
+    }
+
+    console.log(`Captured ${images.length} images`);
+
+    // Step 7: Build complete conversation object
     const conversation = {
       conversation_id: conversationId,
       title: title,
@@ -1373,7 +1442,10 @@ async function extractStructuredConversation() {
       // Structured data
       exchange_count: exchanges.length,
       message_count: messageIndex,
-      exchanges: exchanges
+      exchanges: exchanges,
+
+      // Attachments/images
+      images: images
     };
 
     console.log('=== Structured Extraction Complete ===');

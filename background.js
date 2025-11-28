@@ -131,6 +131,42 @@ async function downloadConversationJSON(conversation, sequenceIndex = null) {
     const cleanTitle = sanitizeFilename(conversation.title || `conversation_${index}`);
     const folderName = `${paddedIndex}_${cleanTitle}_${conversation.conversation_id}`;
 
+    // Download images first (if any)
+    if (conversation.images && conversation.images.length > 0) {
+      console.log(`Downloading ${conversation.images.length} images for ${conversation.title}...`);
+
+      for (let imgIndex = 0; imgIndex < conversation.images.length; imgIndex++) {
+        const img = conversation.images[imgIndex];
+        const imgFilename = `image_${String(imgIndex + 1).padStart(3, '0')}.png`;
+
+        try {
+          if (img.dataUrl) {
+            // Download from data URL
+            await chrome.downloads.download({
+              url: img.dataUrl,
+              filename: `gemini_export/${folderName}/images/${imgFilename}`,
+              saveAs: false
+            });
+            console.log(`  ✓ Downloaded image ${imgIndex + 1}/${conversation.images.length}`);
+          } else if (img.originalSrc) {
+            // Try to download from original URL
+            try {
+              await chrome.downloads.download({
+                url: img.originalSrc,
+                filename: `gemini_export/${folderName}/images/${imgFilename}`,
+                saveAs: false
+              });
+              console.log(`  ✓ Downloaded image ${imgIndex + 1}/${conversation.images.length} from URL`);
+            } catch (e) {
+              console.log(`  ⚠ Could not download image ${imgIndex + 1}, URL saved in JSON`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error downloading image ${imgIndex + 1}:`, error);
+        }
+      }
+    }
+
     // Create pretty-printed JSON
     const jsonContent = JSON.stringify(conversation, null, 2);
     const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonContent);
@@ -149,7 +185,8 @@ async function downloadConversationJSON(conversation, sequenceIndex = null) {
       exportedCount++;
     }
 
-    console.log(`✓ Exported #${index + 1}: ${filename} (${conversation.exchange_count} exchanges, ${conversation.message_count} messages)`);
+    const imageCount = conversation.images ? conversation.images.length : 0;
+    console.log(`✓ Exported #${index + 1}: ${filename} (${conversation.exchange_count} exchanges, ${conversation.message_count} messages, ${imageCount} images)`);
 
     return { success: true, count: index + 1 };
   } catch (error) {
