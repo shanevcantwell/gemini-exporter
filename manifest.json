@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gemini Conversation Exporter",
-  "version": "1.0",
-  "description": "Export all Gemini conversations to Markdown",
+  "version": "1.0.0",
+  "description": "Preserve your Gemini conversation history. Export all conversations with images, thinking blocks, and raw HTML for complete data ownership.",
   "permissions": [
     "storage",
     "downloads"
