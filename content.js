@@ -891,7 +891,8 @@ async function expandAndExtractAllThinkingBlocks() {
 }
 
 // OLD: Single-pass expansion (doesn't handle DOM virtualization)
-async function expandThinkingBlocks_OLD() {
+// Used by legacy extractCurrentConversation() for batch export
+async function expandThinkingBlocks() {
   // Keep expanding thinking blocks until no more unexpanded buttons are found
   let expandedCount = 0;
   let totalProcessed = 0;
